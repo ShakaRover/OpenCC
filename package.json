@@ -1,7 +1,7 @@
 {
-  "name": "openclaude",
+  "name": "opencc",
   "version": "1.0.0",
-  "description": "OpenClaude - A protocol converter between Anthropic Claude API and OpenAI API",
+  "description": "OpenCC - A protocol converter between Anthropic Claude API and OpenAI API",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
@@ -22,10 +22,10 @@
     "api",
     "converter",
     "protocol",
-    "claude",
+    "opencc",
     "gpt"
   ],
-  "author": "OpenClaude Team",
+  "author": "ShakaRover",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.6.2",

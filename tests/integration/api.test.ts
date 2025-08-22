@@ -1,5 +1,5 @@
 /**
- * Integration Tests for OpenClaude API
+ * Integration Tests for OpenCC API
  */
 
 import request from 'supertest';
@@ -7,7 +7,7 @@ import type { Application } from 'express';
 import { createApp } from '@/app.js';
 import type { AnthropicRequest, AnthropicResponse, AnthropicError } from '@/types/index.js';
 
-describe('OpenClaude API Integration Tests', () => {
+describe('OpenCC API Integration Tests', () => {
   let app: Application;
 
   beforeAll(async () => {
@@ -25,7 +25,7 @@ describe('OpenClaude API Integration Tests', () => {
         .get('/')
         .expect(200);
 
-      expect(response.body.name).toBe('OpenClaude Protocol Converter');
+      expect(response.body.name).toBe('OpenCC Protocol Converter');
       expect(response.body.version).toBe('1.0.0');
       expect(response.body.status).toBe('online');
       expect(response.body.endpoints).toBeDefined();

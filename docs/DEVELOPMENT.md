@@ -1,8 +1,8 @@
-# OpenClaude 开发者文档
+# OpenCC 开发者文档
 
 ## 📖 项目概述
 
-OpenClaude 是一个企业级的协议转换器，用于实现 Anthropic Claude API 和 OpenAI API 之间的无缝转换。本文档面向开发者，提供详细的技术实现细节和扩展指南。
+OpenCC 是一个企业级的协议转换器，用于实现 Anthropic Claude API 和 OpenAI API 之间的无缝转换。本文档面向开发者，提供详细的技术实现细节和扩展指南。
 
 ## 🏗️ 架构设计
 
@@ -10,7 +10,7 @@ OpenClaude 是一个企业级的协议转换器，用于实现 Anthropic Claude 
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   HTTP Client   │───▶│  OpenClaude     │───▶│   OpenAI API    │
+│   HTTP Client   │───▶│     OpenCC      │───▶│   OpenAI API    │
 │  (Anthropic)    │    │   Converter     │    │    Service      │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
                               │

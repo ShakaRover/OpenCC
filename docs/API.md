@@ -1,8 +1,8 @@
-# OpenClaude API 文档
+# OpenCC API 文档
 
 ## 📋 API 概览
 
-OpenClaude 提供完全兼容 Anthropic Claude API 的 RESTful 接口，自动将请求转换为 OpenAI 格式处理。
+OpenCC 提供完全兼容 Anthropic Claude API 的 RESTful 接口，自动将请求转换为 OpenAI 格式处理。
 
 ### Base URL
 

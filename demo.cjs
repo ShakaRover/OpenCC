@@ -1,5 +1,5 @@
 /**
- * OpenClaude 协议转换器 - 简化演示版本
+ * OpenCC 协议转换器 - 简化演示版本
  * 
  * 这是一个简化的演示版本，展示了核心转换逻辑
  * 完整的TypeScript版本在src/目录中
@@ -175,7 +175,7 @@ function convertOpenAIToAnthropic(openaiResponse, originalModel) {
 // 根端点
 app.get('/', (req, res) => {
   res.json({
-    name: 'OpenClaude Protocol Converter',
+    name: 'OpenCC Protocol Converter',
     version: '1.0.0',
     description: 'Anthropic Claude API to OpenAI API protocol converter',
     status: 'online',
@@ -303,7 +303,7 @@ app.use((req, res) => {
 
 // 启动服务器
 app.listen(PORT, () => {
-  console.log('🚀 OpenClaude Protocol Converter (Demo Version) is running!');
+  console.log('🚀 OpenCC Protocol Converter (Demo Version) is running!');
   console.log(`📡 Server: http://localhost:${PORT}`);
   console.log('📚 API Endpoints:');
   console.log(`  - Messages: http://localhost:${PORT}/v1/messages`);

@@ -1,10 +1,10 @@
-# OpenClaude 协议转换器
+# OpenCC 协议转换器
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3+-blue)](https://www.typescriptlang.org/)
 
-OpenClaude 是一个高性能的协议转换器，实现 Anthropic Claude API 和 OpenAI API 之间的双向转换。允许用户以 Anthropic 格式发送请求，自动转换为 OpenAI 格式与 OpenAI 服务器通信，然后将响应转换回 Anthropic 格式。
+OpenCC 是一个高性能的协议转换器，实现 Anthropic Claude API 和 OpenAI API 之间的双向转换。允许用户以 Anthropic 格式发送请求，自动转换为 OpenAI 格式与 OpenAI 服务器通信，然后将响应转换回 Anthropic 格式。
 
 ## ✨ 核心特性
 
@@ -35,8 +35,8 @@ OpenClaude 是一个高性能的协议转换器，实现 Anthropic Claude API �
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-org/openclaude.git
-cd openclaude
+git clone https://github.com/your-org/opencc.git
+cd opencc
 ```
 
 ### 2. 安装依赖
@@ -86,7 +86,7 @@ curl http://localhost:3000/health
 
 ### 基础请求格式
 
-OpenClaude 完全兼容 Anthropic Claude API 格式：
+OpenCC 完全兼容 Anthropic Claude API 格式：
 
 ```bash
 curl -X POST http://localhost:3000/v1/messages \
@@ -337,9 +337,9 @@ DEBUG_MODE=true npm run dev
 
 ## 📞 支持
 
-- 📚 [文档](https://github.com/your-org/openclaude/wiki)
-- 🐛 [问题追踪](https://github.com/your-org/openclaude/issues)
-- 💬 [讨论区](https://github.com/your-org/openclaude/discussions)
+- 📚 [文档](https://github.com/your-org/opencc/wiki)
+- 🐛 [问题追踪](https://github.com/your-org/opencc/issues)
+- 💬 [讨论区](https://github.com/your-org/opencc/discussions)
 
 ---
 

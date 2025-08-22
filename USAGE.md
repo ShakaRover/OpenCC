@@ -1,8 +1,8 @@
-# Qwen API代理服务使用说明
+# OpenCC API 协议转换服务使用说明
 
 ## 概述
 
-本服务是一个API代理，将Claude Code客户端的Anthropic API调用转换为Qwen AI的OpenAI兼容API调用。通过OAuth2认证机制连接Qwen服务，实现seamless的AI模型切换。
+本服务是一个 API 协议转换器，将 Anthropic Claude API 调用转换为 OpenAI API 调用，实现不同 AI 模型之间的无缝切换。
 
 ## 前置条件
 

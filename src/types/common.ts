@@ -1,5 +1,5 @@
 /**
- * Common types and interfaces for OpenClaude
+ * Common types and interfaces for OpenCC
  */
 
 import type { AnthropicModel } from './anthropic.js';

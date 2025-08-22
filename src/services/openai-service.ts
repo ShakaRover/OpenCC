@@ -26,7 +26,7 @@ export class OpenAIService {
       headers: {
         'Authorization': `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'OpenClaude/1.0.0'
+        'User-Agent': 'OpenCC/1.0.0'
       }
     });
 
