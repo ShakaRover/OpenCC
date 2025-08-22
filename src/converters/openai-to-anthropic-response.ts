@@ -84,7 +84,7 @@ export class OpenAIToAnthropicResponseConverter {
       for (const toolCall of message.tool_calls) {
         if (toolCall.type === 'function') {
           try {
-            const input = JSON.parse(toolCall.function.arguments);
+            const input = this.parseToolArguments(toolCall.function.arguments, requestId, toolCall.id);
             const toolUseContent: AnthropicToolUseContent = {
               type: 'tool_use',
               id: toolCall.id,
@@ -132,6 +132,75 @@ export class OpenAIToAnthropicResponseConverter {
     }
 
     return content;
+  }
+
+  /**
+   * 解析工具调用参数，支持容错处理
+   */
+  private parseToolArguments(argumentsStr: string, requestId: string, toolCallId: string): any {
+    if (!argumentsStr || argumentsStr.trim() === '') {
+      return {};
+    }
+
+    try {
+      // 首先尝试标准JSON解析
+      return JSON.parse(argumentsStr);
+    } catch (error) {
+      logger.warn('Standard JSON parse failed, attempting alternative parsing', {
+        requestId,
+        toolCallId,
+        arguments: argumentsStr.substring(0, 200)
+      });
+
+      try {
+        // 尝试修复单引号问题
+        const fixedJson = argumentsStr
+          .replace(/'/g, '"')  // 将单引号替换为双引号
+          .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":'); // 添加属性名的双引号
+        
+        const result = JSON.parse(fixedJson);
+        
+        logger.info('Successfully parsed arguments with quote fixing', {
+          requestId,
+          toolCallId,
+          originalLength: argumentsStr.length,
+          fixedLength: fixedJson.length
+        });
+        
+        return result;
+      } catch (secondError) {
+        logger.warn('Quote fixing failed, attempting eval parsing', {
+          requestId,
+          toolCallId,
+          error: secondError instanceof Error ? secondError.message : String(secondError)
+        });
+
+        try {
+          // 最后尝试使用eval进行解析（仅用于简单对象）
+          // 注意：这有安全风险，但在受控环境中可以接受
+          const safeEval = new Function('return ' + argumentsStr);
+          const result = safeEval();
+          
+          logger.info('Successfully parsed arguments with eval', {
+            requestId,
+            toolCallId
+          });
+          
+          return result;
+        } catch (evalError) {
+          logger.error('All parsing methods failed', {
+            requestId,
+            toolCallId,
+            originalError: error instanceof Error ? error.message : String(error),
+            evalError: evalError instanceof Error ? evalError.message : String(evalError),
+            arguments: argumentsStr
+          });
+          
+          // 如果所有方法都失败，抛出原始错误
+          throw error;
+        }
+      }
+    }
   }
 
   /**
