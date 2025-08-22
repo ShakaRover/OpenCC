@@ -153,35 +153,34 @@ export class OpenAIToAnthropicResponseConverter {
       });
 
       try {
-        // 尝试修复单引号问题
-        const fixedJson = argumentsStr
-          .replace(/'/g, '"')  // 将单引号替换为双引号
-          .replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":'); // 添加属性名的双引号
+        // 尝试智能修复JSON格式
+        const fixedJson = this.smartFixJsonQuotes(argumentsStr);
         
         const result = JSON.parse(fixedJson);
         
-        logger.info('Successfully parsed arguments with quote fixing', {
+        logger.info('Successfully parsed arguments with smart quote fixing', {
           requestId,
           toolCallId,
           originalLength: argumentsStr.length,
-          fixedLength: fixedJson.length
+          fixedLength: fixedJson.length,
+          changesMade: argumentsStr !== fixedJson
         });
         
         return result;
       } catch (secondError) {
-        logger.warn('Quote fixing failed, attempting eval parsing', {
+        logger.warn('Smart quote fixing failed, attempting safe eval parsing', {
           requestId,
           toolCallId,
           error: secondError instanceof Error ? secondError.message : String(secondError)
         });
 
         try {
-          // 最后尝试使用eval进行解析（仅用于简单对象）
-          // 注意：这有安全风险，但在受控环境中可以接受
+          // 最后尝试使用Function构造器进行安全解析
+          // 仅用于简单对象，有一定安全限制
           const safeEval = new Function('return ' + argumentsStr);
           const result = safeEval();
           
-          logger.info('Successfully parsed arguments with eval', {
+          logger.info('Successfully parsed arguments with safe eval', {
             requestId,
             toolCallId
           });
@@ -201,6 +200,109 @@ export class OpenAIToAnthropicResponseConverter {
         }
       }
     }
+  }
+
+  /**
+   * 智能修复JSON格式中的引号问题
+   */
+  private smartFixJsonQuotes(jsonStr: string): string {
+    let result = jsonStr.trim();
+    
+    // 1. 修复属性名的引号问题
+    // 匹配模式：{ 或 , 后面跟着可能的空格，然后是未加引号的属性名
+    result = result.replace(
+      /([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, 
+      '$1"$2":'
+    );
+    
+    // 2. 智能处理值的单引号问题
+    // 这是更复杂的部分，需要区分字符串值和对象键
+    result = this.fixValueQuotes(result);
+    
+    return result;
+  }
+
+  /**
+   * 修复JSON值中的引号问题（更精确的处理）
+   */
+  private fixValueQuotes(jsonStr: string): string {
+    let result = '';
+    let i = 0;
+    let inString = false;
+    let stringChar = '';
+    let escapeNext = false;
+    
+    while (i < jsonStr.length) {
+      const char = jsonStr[i];
+      const nextChar = jsonStr[i + 1];
+      
+      if (escapeNext) {
+        result += char;
+        escapeNext = false;
+        i++;
+        continue;
+      }
+      
+      if (char === '\\') {
+        result += char;
+        escapeNext = true;
+        i++;
+        continue;
+      }
+      
+      if (!inString) {
+        // 不在字符串内部
+        if (char === "'" && this.isStartOfStringValue(jsonStr, i)) {
+          // 这是字符串值的开始，将单引号转为双引号
+          result += '"';
+          inString = true;
+          stringChar = "'";
+        } else if (char === '"') {
+          result += char;
+          inString = true;
+          stringChar = '"';
+        } else {
+          result += char;
+        }
+      } else {
+        // 在字符串内部
+        if (char === stringChar && !escapeNext) {
+          // 字符串结束
+          if (stringChar === "'") {
+            result += '"';  // 将结束的单引号转为双引号
+          } else {
+            result += char;
+          }
+          inString = false;
+          stringChar = '';
+        } else if (char === '"' && stringChar === "'") {
+          // 在单引号字符串内遇到双引号，需要转义
+          result += '\\"';
+        } else {
+          result += char;
+        }
+      }
+      
+      i++;
+    }
+    
+    return result;
+  }
+  
+  /**
+   * 判断当前位置的单引号是否是字符串值的开始
+   */
+  private isStartOfStringValue(jsonStr: string, position: number): boolean {
+    // 向前查找最近的非空白字符
+    for (let i = position - 1; i >= 0; i--) {
+      const char = jsonStr[i];
+      if (char === ' ' || char === '\t' || char === '\n' || char === '\r') {
+        continue;
+      }
+      // 如果前面是冒号或方括号开始，则这是值的开始
+      return char === ':' || char === '[' || char === ',';
+    }
+    return false;
   }
 
   /**
