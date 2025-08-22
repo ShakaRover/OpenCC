@@ -4,39 +4,10 @@
  */
 
 import { logger, extractTextFromContent } from '../utils/helpers.js';
+import { AnthropicTool, AnthropicRequest, AnthropicMessage, AnthropicContent, AnthropicToolUseContent, AnthropicToolResultContent } from '../types/anthropic.js';
+import { OpenAITool, OpenAIRequest, OpenAIMessage, OpenAIToolChoice } from '../types/openai.js';
 
-// Anthropic API 类型定义
-interface AnthropicMessage {
-  role: 'user' | 'assistant';
-  content: string | Array<{ type: 'text'; text: string }>;
-}
-
-interface AnthropicRequest {
-  model: string;
-  max_tokens: number;
-  messages: AnthropicMessage[];
-  temperature?: number;
-  stream?: boolean;
-  stop?: string | string[];
-  top_p?: number;
-  top_k?: number;
-}
-
-// OpenAI API 类型定义
-interface OpenAIMessage {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
-
-interface OpenAIRequest {
-  model: string;
-  messages: OpenAIMessage[];
-  max_tokens?: number;
-  temperature?: number;
-  stream?: boolean;
-  stop?: string | string[];
-  top_p?: number;
-}
+// 删除本地类型定义，使用导入的类型
 
 export class AnthropicToOpenAIConverter {
   private readonly targetModel = 'qwen3-coder-plus';
@@ -62,8 +33,10 @@ export class AnthropicToOpenAIConverter {
       max_tokens: anthropicRequest.max_tokens,
       temperature: anthropicRequest.temperature,
       stream: anthropicRequest.stream,
-      stop: anthropicRequest.stop,
-      top_p: anthropicRequest.top_p
+      stop: anthropicRequest.stop_sequences,
+      top_p: anthropicRequest.top_p,
+      tools: this.convertTools(anthropicRequest.tools, requestId),
+      tool_choice: this.convertToolChoice(anthropicRequest.tool_choice, requestId)
     };
 
     // 移除undefined值
@@ -90,48 +63,205 @@ export class AnthropicToOpenAIConverter {
       return [];
     }
 
-    return messages.map((msg, index) => {
-      const convertedContent = this.convertContent(msg.content, requestId, index);
-      
-      return {
-        role: msg.role,
-        content: convertedContent
+    const openaiMessages: OpenAIMessage[] = [];
+
+    messages.forEach((msg, index) => {
+      const convertedMessages = this.convertMessage(msg, requestId, index);
+      openaiMessages.push(...convertedMessages);
+    });
+
+    return openaiMessages;
+  }
+
+  /**
+   * 转换单个消息，可能产生多个OpenAI消息
+   */
+  private convertMessage(message: AnthropicMessage, requestId: string, messageIndex: number): OpenAIMessage[] {
+    if (typeof message.content === 'string') {
+      return [{
+        role: message.role,
+        content: message.content
+      }];
+    }
+
+    if (!Array.isArray(message.content)) {
+      logger.warn('Invalid message content format', {
+        requestId,
+        messageIndex,
+        contentType: typeof message.content
+      });
+      return [{
+        role: message.role,
+        content: ''
+      }];
+    }
+
+    const messages: OpenAIMessage[] = [];
+    let currentMessage: OpenAIMessage = {
+      role: message.role,
+      content: null
+    };
+    const textParts: string[] = [];
+    const toolCalls: any[] = [];
+
+    for (const contentBlock of message.content) {
+      switch (contentBlock.type) {
+        case 'text':
+          textParts.push(contentBlock.text);
+          break;
+        case 'tool_use':
+          const toolUse = contentBlock as AnthropicToolUseContent;
+          toolCalls.push({
+            id: toolUse.id,
+            type: 'function',
+            function: {
+              name: toolUse.name,
+              arguments: JSON.stringify(toolUse.input)
+            }
+          });
+          break;
+        case 'tool_result':
+          // Tool results need to be converted to separate messages
+          const toolResult = contentBlock as AnthropicToolResultContent;
+          if (currentMessage.content !== null || toolCalls.length > 0) {
+            // Finish current message first
+            if (textParts.length > 0) {
+              currentMessage.content = textParts.join('');
+            }
+            if (toolCalls.length > 0) {
+              currentMessage.tool_calls = toolCalls;
+            }
+            messages.push(currentMessage);
+            
+            // Reset for next message
+            currentMessage = {
+              role: message.role,
+              content: null
+            };
+            textParts.length = 0;
+            toolCalls.length = 0;
+          }
+          
+          // Add tool result as separate message
+          messages.push({
+            role: 'tool',
+            content: typeof toolResult.content === 'string' 
+              ? toolResult.content 
+              : JSON.stringify(toolResult.content),
+            tool_call_id: toolResult.tool_use_id
+          });
+          break;
+        case 'image':
+          logger.warn('Image content not supported in OpenAI conversion', {
+            requestId,
+            messageIndex
+          });
+          break;
+        default:
+          logger.warn('Unknown content block type', {
+            requestId,
+            messageIndex,
+            contentType: (contentBlock as any).type
+          });
+      }
+    }
+
+    // Add final message if it has content
+    if (textParts.length > 0 || toolCalls.length > 0) {
+      if (textParts.length > 0) {
+        currentMessage.content = textParts.join('');
+      }
+      if (toolCalls.length > 0) {
+        currentMessage.tool_calls = toolCalls;
+      }
+      messages.push(currentMessage);
+    } else if (messages.length === 0) {
+      // Ensure we always return at least one message
+      messages.push({
+        role: message.role,
+        content: ''
+      });
+    }
+
+    return messages;
+  }
+
+
+
+  /**
+   * 转换工具定义
+   */
+  private convertTools(tools: AnthropicTool[] | undefined, requestId: string): OpenAITool[] | undefined {
+    if (!tools || tools.length === 0) {
+      return undefined;
+    }
+
+    logger.debug('Converting tools', {
+      requestId,
+      toolCount: tools.length,
+      toolNames: tools.map(tool => tool.name)
+    });
+
+    return tools.map(tool => {
+      const openaiTool: OpenAITool = {
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.input_schema
+        }
       };
+
+      logger.debug('Converted tool', {
+        requestId,
+        toolName: tool.name,
+        hasParameters: !!tool.input_schema
+      });
+
+      return openaiTool;
     });
   }
 
   /**
-   * 转换消息内容
+   * 转换工具选择策略
    */
-  private convertContent(content: string | Array<{ type: 'text'; text: string }>, requestId: string, messageIndex: number): string {
-    if (typeof content === 'string') {
-      return content;
+  private convertToolChoice(toolChoice: AnthropicRequest['tool_choice'], requestId: string): OpenAIToolChoice | undefined {
+    if (!toolChoice) {
+      return undefined;
     }
 
-    if (Array.isArray(content)) {
-      const textContent = extractTextFromContent(content);
-      
-      // 检查是否有非文本内容
-      const nonTextBlocks = content.filter(block => block.type !== 'text');
-      if (nonTextBlocks.length > 0) {
-        logger.warn('Non-text content blocks detected and will be filtered out', {
-          requestId,
-          messageIndex,
-          nonTextBlockTypes: nonTextBlocks.map(block => block.type),
-          nonTextBlockCount: nonTextBlocks.length
-        });
-      }
-
-      return textContent;
-    }
-
-    logger.warn('Unexpected content format', {
+    logger.debug('Converting tool choice', {
       requestId,
-      messageIndex,
-      contentType: typeof content
+      toolChoiceType: toolChoice.type,
+      toolChoiceName: toolChoice.name
     });
 
-    return '';
+    switch (toolChoice.type) {
+      case 'auto':
+        return 'auto';
+      case 'any':
+        // OpenAI doesn't have 'any' equivalent, fallback to 'auto'
+        logger.warn('Converting Anthropic tool_choice "any" to OpenAI "auto"', { requestId });
+        return 'auto';
+      case 'tool':
+        if (toolChoice.name) {
+          return {
+            type: 'function',
+            function: {
+              name: toolChoice.name
+            }
+          };
+        } else {
+          logger.warn('Tool choice type "tool" specified without name, fallback to "auto"', { requestId });
+          return 'auto';
+        }
+      default:
+        logger.warn('Unknown tool choice type, fallback to "auto"', {
+          requestId,
+          toolChoiceType: (toolChoice as any).type
+        });
+        return 'auto';
+    }
   }
 
   /**

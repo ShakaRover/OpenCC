@@ -1,52 +1,6 @@
 import { logger } from '../utils/helpers.js';
-
-// OpenAI API 响应类型定义
-interface OpenAIMessage {
-  role: string;
-  content: string;
-}
-
-interface OpenAIChoice {
-  index: number;
-  message: OpenAIMessage;
-  finish_reason: string;
-}
-
-interface OpenAIUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-}
-
-interface OpenAIResponse {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: OpenAIChoice[];
-  usage: OpenAIUsage;
-}
-
-// Anthropic API 响应类型定义
-interface AnthropicContent {
-  type: 'text';
-  text: string;
-}
-
-interface AnthropicUsage {
-  input_tokens: number;
-  output_tokens: number;
-}
-
-interface AnthropicResponse {
-  id: string;
-  type: 'message';
-  role: 'assistant';
-  content: AnthropicContent[];
-  model: string;
-  stop_reason: string;
-  usage: AnthropicUsage;
-}
+import { OpenAIResponse, OpenAIChoice, OpenAIToolCall, OpenAIMessage } from '../types/openai.js';
+import { AnthropicResponse, AnthropicContent, AnthropicUsage, AnthropicToolUseContent, AnthropicTextContent, AnthropicStopReason } from '../types/anthropic.js';
 
 export class OpenAIToAnthropicResponseConverter {
   
@@ -79,16 +33,14 @@ export class OpenAIToAnthropicResponseConverter {
     // 生成Anthropic风格的消息ID
     const anthropicMessageId = `msg_${this.generateRandomString(24)}`;
 
+    // 转换内容块（文本和工具调用）
+    const content = this.convertResponseContent(choice.message, requestId);
+
     const anthropicResponse: AnthropicResponse = {
       id: anthropicMessageId,
       type: 'message',
       role: 'assistant',
-      content: [
-        {
-          type: 'text',
-          text: choice.message.content || ''
-        }
-      ],
+      content,
       model: originalModel, // 返回客户端原始请求的模型
       stop_reason: this.convertFinishReason(choice.finish_reason),
       usage: {
@@ -105,6 +57,81 @@ export class OpenAIToAnthropicResponseConverter {
     });
 
     return anthropicResponse;
+  }
+
+  /**
+   * 转换响应内容（文本和工具调用）
+   */
+  private convertResponseContent(message: OpenAIMessage, requestId: string): AnthropicContent[] {
+    const content: AnthropicContent[] = [];
+
+    // 添加文本内容
+    if (message.content) {
+      const textContent: AnthropicTextContent = {
+        type: 'text',
+        text: message.content
+      };
+      content.push(textContent);
+    }
+
+    // 添加工具调用
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      logger.debug('Converting tool calls to Anthropic format', {
+        requestId,
+        toolCallCount: message.tool_calls.length
+      });
+
+      for (const toolCall of message.tool_calls) {
+        if (toolCall.type === 'function') {
+          try {
+            const input = JSON.parse(toolCall.function.arguments);
+            const toolUseContent: AnthropicToolUseContent = {
+              type: 'tool_use',
+              id: toolCall.id,
+              name: toolCall.function.name,
+              input
+            };
+            content.push(toolUseContent);
+
+            logger.debug('Converted tool call', {
+              requestId,
+              toolCallId: toolCall.id,
+              toolName: toolCall.function.name
+            });
+          } catch (error) {
+            logger.error('Failed to parse tool call arguments', {
+              requestId,
+              toolCallId: toolCall.id,
+              arguments: toolCall.function.arguments,
+              error: error instanceof Error ? error.message : String(error)
+            });
+
+            // Add as text content with error information
+            const errorText: AnthropicTextContent = {
+              type: 'text',
+              text: `Error: Invalid tool call arguments for ${toolCall.function.name}`
+            };
+            content.push(errorText);
+          }
+        } else {
+          logger.warn('Unknown tool call type', {
+            requestId,
+            toolCallType: (toolCall as any).type,
+            toolCallId: toolCall.id
+          });
+        }
+      }
+    }
+
+    // 确保至少有一个内容块
+    if (content.length === 0) {
+      content.push({
+        type: 'text',
+        text: ''
+      });
+    }
+
+    return content;
   }
 
   /**
@@ -204,8 +231,8 @@ export class OpenAIToAnthropicResponseConverter {
   /**
    * 转换结束原因
    */
-  private convertFinishReason(reason: string): string {
-    const mapping: Record<string, string> = {
+  private convertFinishReason(reason: string): AnthropicStopReason {
+    const mapping: Record<string, AnthropicStopReason> = {
       'stop': 'end_turn',
       'length': 'max_tokens',
       'tool_calls': 'tool_use',
