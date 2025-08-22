@@ -1,72 +1,113 @@
-/**
- * Utility functions for OpenClaude protocol converter
- */
+import winston from 'winston';
+import DailyRotateFile from 'winston-daily-rotate-file';
+import path from 'path';
 
-import { v4 as uuidv4 } from 'uuid';
-import type { 
-  AnthropicModel, 
-  OpenAIModel, 
-  ModelMapping,
-  ANTHROPIC_MESSAGE_ID_PREFIX,
-  OPENAI_COMPLETION_ID_PREFIX 
-} from '@/types/index.js';
+// 配置Winston日志系统 - 双重输出（控制台+文件）
+const loggerConfig = {
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({
+      format: 'YYYY-MM-DD HH:mm:ss'
+    }),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  transports: [
+    // 控制台输出 - 彩色格式
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.printf(({ timestamp, level, message, ...meta }) => {
+          let metaStr = '';
+          if (Object.keys(meta).length > 0) {
+            metaStr = ` ${JSON.stringify(meta)}`;
+          }
+          return `${timestamp} [${level}]: ${message}${metaStr}`;
+        })
+      )
+    }),
+    
+    // 错误日志文件
+    new winston.transports.File({ 
+      filename: 'logs/error.log', 
+      level: 'error',
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+      )
+    }),
+    
+    // 所有日志文件
+    new winston.transports.File({ 
+      filename: 'logs/app.log',
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+      )
+    }),
+    
+    // 按日期轮转的访问日志
+    new DailyRotateFile({
+      filename: 'logs/access-%DATE%.log',
+      datePattern: 'YYYY-MM-DD',
+      maxSize: '20m',
+      maxFiles: '14d',
+      format: winston.format.combine(
+        winston.format.timestamp(),
+        winston.format.json()
+      )
+    })
+  ]
+};
 
-/**
- * Generate a unique request ID
- */
+// 创建全局logger实例
+export const logger = winston.createLogger(loggerConfig);
+
+export function formatError(error: Error): object {
+  return {
+    name: error.name,
+    message: error.message,
+    stack: error.stack
+  };
+}
+
+export function validateRequestBody(body: any, requiredFields: string[]): void {
+  for (const field of requiredFields) {
+    if (!(field in body)) {
+      throw new Error(`Missing required field: ${field}`);
+    }
+  }
+}
+
+// 生成请求ID的工具函数
 export function generateRequestId(): string {
-  return uuidv4();
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/**
- * Generate Anthropic-style message ID
- */
-export function generateAnthropicMessageId(): string {
-  return `msg_${generateRandomString(24)}`;
+// 记录请求开始
+export function logRequestStart(requestId: string, method: string, url: string, originalModel?: string) {
+  logger.info('Request started', {
+    requestId,
+    method,
+    url,
+    originalModel,
+    timestamp: new Date().toISOString()
+  });
 }
 
-/**
- * Generate OpenAI-style completion ID
- */
-export function generateOpenAICompletionId(): string {
-  return `chatcmpl-${generateRandomString(29)}`;
+// 记录请求结束
+export function logRequestEnd(requestId: string, statusCode: number, duration: number, tokens?: { input: number; output: number }) {
+  logger.info('Request completed', {
+    requestId,
+    statusCode,
+    duration,
+    inputTokens: tokens?.input || 0,
+    outputTokens: tokens?.output || 0,
+    timestamp: new Date().toISOString()
+  });
 }
 
-/**
- * Generate random string of specified length
- */
-export function generateRandomString(length: number): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-/**
- * Get current Unix timestamp
- */
-export function getCurrentTimestamp(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-/**
- * Validate temperature parameter for different APIs
- */
-export function validateTemperature(temperature: number, targetApi: 'anthropic' | 'openai'): number {
-  if (targetApi === 'anthropic') {
-    // Anthropic: 0.0 - 1.0
-    return Math.max(0, Math.min(1, temperature));
-  } else {
-    // OpenAI: 0.0 - 2.0
-    return Math.max(0, Math.min(2, temperature));
-  }
-}
-
-/**
- * Extract text content from mixed content array
- */
+// 提取文本内容
 export function extractTextFromContent(content: string | any[]): string {
   if (typeof content === 'string') {
     return content;
@@ -82,157 +123,27 @@ export function extractTextFromContent(content: string | any[]): string {
   return '';
 }
 
-/**
- * Check if content contains unsupported types (audio/file)
- */
-export function hasUnsupportedContent(content: any[]): { hasUnsupported: boolean; unsupportedTypes: string[] } {
-  if (!Array.isArray(content)) {
-    return { hasUnsupported: false, unsupportedTypes: [] };
-  }
-  
-  const unsupportedTypes = content
-    .map(item => item.type)
-    .filter(type => ['input_audio', 'file'].includes(type));
-    
-  return {
-    hasUnsupported: unsupportedTypes.length > 0,
-    unsupportedTypes: [...new Set(unsupportedTypes)]
-  };
+// 生成Anthropic消息ID
+export function generateAnthropicMessageId(): string {
+  return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-/**
- * Flatten content array to string with metadata preservation
- */
-export function flattenContentToString(content: string | any[]): string {
-  if (typeof content === 'string') {
-    return content;
-  }
-  
-  if (!Array.isArray(content)) {
-    return '';
-  }
-  
-  const textParts: string[] = [];
-  
-  for (const item of content) {
-    switch (item.type) {
-      case 'text':
-        textParts.push(item.text || '');
-        break;
-      case 'image':
-        textParts.push('[Image content provided - analysis capabilities may vary]');
-        break;
-      case 'tool_use':
-        textParts.push(`[Tool called: ${item.name}]`);
-        break;
-      case 'tool_result':
-        if (typeof item.content === 'string') {
-          textParts.push(item.content);
-        }
-        break;
-    }
-  }
-  
-  return textParts.join('\n').trim();
+// 获取当前时间戳
+export function getCurrentTimestamp(): number {
+  return Date.now();
 }
 
-/**
- * Convert string content to Anthropic content array format
- */
-export function stringToAnthropicContent(text: string): Array<{ type: 'text'; text: string }> {
+// 将字符串转换为Anthropic内容格式
+export function stringToAnthropicContent(text: string): any[] {
   return [{ type: 'text', text }];
 }
 
-/**
- * Sanitize and validate JSON string
- */
-export function safeJsonParse(jsonString: string, fallback: any = {}): any {
+// 安全JSON解析
+export function safeJsonParse(str: string): any {
   try {
-    return JSON.parse(jsonString);
-  } catch {
-    return fallback;
+    return JSON.parse(str);
+  } catch (error) {
+    logger.warn('Failed to parse JSON', { error: error instanceof Error ? error.message : 'Unknown error', input: str });
+    return null;
   }
-}
-
-/**
- * Deep clone object
- */
-export function deepClone<T>(obj: T): T {
-  return JSON.parse(JSON.stringify(obj));
-}
-
-/**
- * Remove undefined properties from object
- */
-export function removeUndefined<T extends Record<string, any>>(obj: T): Partial<T> {
-  const result: Partial<T> = {};
-  
-  for (const [key, value] of Object.entries(obj)) {
-    if (value !== undefined) {
-      result[key as keyof T] = value;
-    }
-  }
-  
-  return result;
-}
-
-/**
- * Calculate token estimate (rough approximation)
- */
-export function estimateTokens(text: string): number {
-  // Rough estimation: ~4 characters per token for English text
-  return Math.ceil(text.length / 4);
-}
-
-/**
- * Truncate text to approximate token limit
- */
-export function truncateToTokenLimit(text: string, maxTokens: number): string {
-  const maxChars = maxTokens * 4; // Rough estimation
-  if (text.length <= maxChars) {
-    return text;
-  }
-  
-  return text.substring(0, maxChars - 3) + '...';
-}
-
-/**
- * Format error message for logging
- */
-export function formatErrorForLogging(error: unknown): string {
-  if (error instanceof Error) {
-    return `${error.name}: ${error.message}`;
-  }
-  
-  if (typeof error === 'string') {
-    return error;
-  }
-  
-  return JSON.stringify(error);
-}
-
-/**
- * Check if string is valid JSON
- */
-export function isValidJson(str: string): boolean {
-  try {
-    JSON.parse(str);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Generate cache key for content caching
- */
-export function generateCacheKey(content: string): string {
-  // Simple hash function for cache keys
-  let hash = 0;
-  for (let i = 0; i < content.length; i++) {
-    const char = content.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32-bit integer
-  }
-  return Math.abs(hash).toString(36);
 }

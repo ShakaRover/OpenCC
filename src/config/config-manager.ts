@@ -14,7 +14,7 @@ import type {
   RateLimitConfig,
   LoggingConfig,
   FeatureFlags
-} from '@/types/index.js';
+} from '../types/index.js';
 
 // Load environment variables
 config();
@@ -287,7 +287,7 @@ export class ConfigManager {
    * Update model mapping at runtime
    */
   updateModelMapping(newMapping: Partial<ModelMapping>): void {
-    this.modelMapping = { ...this.modelMapping, ...newMapping };
+    Object.assign(this.modelMapping, newMapping);
   }
 
   /**

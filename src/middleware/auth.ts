@@ -4,7 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import type { AnthropicError } from '@/types/index.js';
+import type { AnthropicError } from '../types/index.js';
 
 interface AuthenticatedRequest extends Request {
   apiKey?: string;
@@ -33,7 +33,8 @@ export function anthropicAuthMiddleware(
         }
       };
 
-      return res.status(401).json(error);
+      res.status(401).json(error);
+      return;
     }
 
     // Basic API key format validation
@@ -46,7 +47,8 @@ export function anthropicAuthMiddleware(
         }
       };
 
-      return res.status(401).json(error);
+      res.status(401).json(error);
+      return;
     }
 
     // Store API key in request for potential future use

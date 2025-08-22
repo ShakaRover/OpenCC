@@ -5,7 +5,7 @@
 
 import rateLimit from 'express-rate-limit';
 import type { Request, Response } from 'express';
-import type { RateLimitConfig, AnthropicError } from '@/types/index.js';
+import type { RateLimitConfig, AnthropicError } from '../types/index.js';
 
 /**
  * Create rate limiter middleware
@@ -41,14 +41,7 @@ export function createRateLimiter(config: RateLimitConfig) {
 
     // Add rate limit headers
     standardHeaders: true,
-    legacyHeaders: false,
-
-    // Custom header names for consistency
-    headers: {
-      remaining: 'X-RateLimit-Remaining',
-      reset: 'X-RateLimit-Reset',
-      total: 'X-RateLimit-Limit'
-    }
+    legacyHeaders: false
   });
 }
 

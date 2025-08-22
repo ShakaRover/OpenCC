@@ -16,14 +16,14 @@ import type {
   ConversionResult,
   ConversionContext,
   StandardError
-} from '@/types/index.js';
+} from '../types/index.js';
 
 import {
   generateAnthropicMessageId,
   getCurrentTimestamp,
   stringToAnthropicContent,
   safeJsonParse
-} from '@/utils/helpers.js';
+} from '../utils/helpers.js';
 
 export class OpenAIToAnthropicConverter {
   /**
@@ -165,6 +165,7 @@ export class OpenAIToAnthropicConverter {
         chunks.push({
           type: 'message_delta',
           delta: {
+            type: 'text_delta',
             stop_reason: this.convertFinishReason(choice.finish_reason),
             usage: openaiChunk.usage ? {
               output_tokens: openaiChunk.usage.completion_tokens
@@ -250,7 +251,7 @@ export class OpenAIToAnthropicConverter {
           type: 'tool_use',
           id: toolCall.id,
           name: toolCall.function.name,
-          input: safeJsonParse(toolCall.function.arguments, {})
+          input: safeJsonParse(toolCall.function.arguments) || {}
         });
       }
     }

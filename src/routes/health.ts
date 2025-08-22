@@ -1,168 +1,140 @@
-/**
- * Health Check Route Handler
- * Handles /health endpoint for service monitoring
- */
+import express, { Request, Response } from 'express';
+import { logger, generateRequestId } from '../utils/helpers.js';
+import { oauthMiddleware } from '../middleware/oauth.js';
 
-import { Router, Request, Response } from 'express';
-import type { HealthCheckResult } from '@/types/index.js';
-import { ConversionService } from '@/services/index.js';
-import { configManager } from '@/config/index.js';
+const router = express.Router();
 
-export function createHealthRouter(conversionService: ConversionService): Router {
-  const router = Router();
+// 中间件：生成请求ID
+router.use((req: Request, res: Response, next) => {
+  req.requestId = generateRequestId();
+  next();
+});
 
-  /**
-   * GET /health
-   * Basic health check endpoint
-   */
-  router.get('/', async (req: Request, res: Response) => {
-    try {
-      const healthStatus = await conversionService.getHealthStatus();
-      const config = configManager.getConfig();
-      const envInfo = configManager.getEnvironmentInfo();
+// 中间件：检查OAuth凭证状态
+router.use(oauthMiddleware.checkCredentialStatus);
 
-      const memoryUsage = process.memoryUsage();
-      const healthResult: HealthCheckResult = {
-        status: healthStatus.status,
-        timestamp: Date.now(),
-        version: '1.0.0',
-        uptime: process.uptime(),
-        services: {
-          openai: healthStatus.openai
-        },
-        memory: {
-          used: memoryUsage.heapUsed,
-          total: memoryUsage.heapTotal,
-          percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100)
-        }
-      };
-
-      const statusCode = healthResult.status === 'healthy' ? 200 : 503;
-      res.status(statusCode).json(healthResult);
-
-    } catch (error) {
-      console.error('Health check error:', error);
-      
-      const unhealthyResult: HealthCheckResult = {
-        status: 'unhealthy',
-        timestamp: Date.now(),
-        version: '1.0.0',
-        uptime: process.uptime(),
-        services: {
-          openai: {
-            status: 'down'
-          }
-        },
-        memory: {
-          used: 0,
-          total: 0,
-          percentage: 0
-        }
-      };
-
-      res.status(503).json(unhealthyResult);
-    }
+// GET /health - 服务健康检查端点
+router.get('/', (req: Request, res: Response) => {
+  const requestId = req.requestId!;
+  const startTime = Date.now();
+  
+  logger.info('Health check requested', {
+    requestId,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip
   });
-
-  /**
-   * GET /health/detailed
-   * Detailed health check with metrics
-   */
-  router.get('/detailed', async (req: Request, res: Response) => {
-    try {
-      const healthStatus = await conversionService.getHealthStatus();
-      const metrics = conversionService.getMetrics();
-      const config = configManager.getConfig();
-      const envInfo = configManager.getEnvironmentInfo();
-
-      const memoryUsage = process.memoryUsage();
-      const detailedHealth = {
-        status: healthStatus.status,
-        timestamp: Date.now(),
-        version: '1.0.0',
-        uptime: process.uptime(),
-        environment: {
-          nodeVersion: envInfo.nodeVersion,
-          platform: envInfo.platform,
-          nodeEnv: config.server.nodeEnv
-        },
-        services: {
-          openai: healthStatus.openai
-        },
-        memory: {
-          used: memoryUsage.heapUsed,
-          total: memoryUsage.heapTotal,
-          percentage: Math.round((memoryUsage.heapUsed / memoryUsage.heapTotal) * 100),
-          rss: memoryUsage.rss,
-          external: memoryUsage.external
-        },
-        metrics: {
-          activeRequests: healthStatus.metrics.activeRequests,
-          totalRequests: healthStatus.metrics.totalRequests,
-          recentRequests: metrics.slice(-10) // Last 10 requests
-        },
-        configuration: {
-          features: config.features,
-          supportedModels: Object.keys(configManager.getModelMapping())
+  
+  // 基本服务状态
+  const serviceStatus = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: process.env.npm_package_version || '1.0.0',
+    node_version: process.version,
+    environment: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 26666
+  };
+  
+  // OAuth凭证状态
+  const oauthStatus = req.oauthStatus || {
+    hasCredentials: false,
+    isExpired: true,
+    error: 'Unable to check OAuth status'
+  };
+  
+  // 判断整体服务状态
+  let overallStatus = 'healthy';
+  let statusCode = 200;
+  
+  if (!oauthStatus.hasCredentials || oauthStatus.isExpired) {
+    overallStatus = 'degraded';
+    statusCode = 503; // Service Unavailable
+  }
+  
+  const healthResponse = {
+    service: 'qwen-api-proxy',
+    status: overallStatus,
+    timestamp: serviceStatus.timestamp,
+    checks: {
+      api_server: {
+        status: 'healthy',
+        details: {
+          uptime: serviceStatus.uptime,
+          memory_usage: process.memoryUsage(),
+          node_version: serviceStatus.node_version
         }
-      };
-
-      const statusCode = healthStatus.status === 'healthy' ? 200 : 503;
-      res.status(statusCode).json(detailedHealth);
-
-    } catch (error) {
-      console.error('Detailed health check error:', error);
-      res.status(503).json({
-        status: 'unhealthy',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
+      },
+      oauth_credentials: {
+        status: oauthStatus.hasCredentials && !oauthStatus.isExpired ? 'healthy' : 'unhealthy',
+        details: {
+          has_credentials: oauthStatus.hasCredentials,
+          is_expired: oauthStatus.isExpired,
+          expiry_date: oauthStatus.expiryDate,
+          resource_url: oauthStatus.resourceUrl,
+          error: oauthStatus.error
+        }
+      },
+      model_configuration: {
+        status: 'healthy',
+        details: {
+          target_model: 'qwen3-coder-plus',
+          supported_anthropic_models: [
+            'claude-3-opus-20240229',
+            'claude-3-sonnet-20240229',
+            'claude-3-haiku-20240307'
+          ]
+        }
+      }
+    },
+    configuration: {
+      version: serviceStatus.version,
+      environment: serviceStatus.environment,
+      port: serviceStatus.port,
+      log_level: process.env.LOG_LEVEL || 'info'
     }
+  };
+  
+  const duration = Date.now() - startTime;
+  
+  logger.info('Health check completed', {
+    requestId,
+    status: overallStatus,
+    duration,
+    oauthHealthy: oauthStatus.hasCredentials && !oauthStatus.isExpired
   });
+  
+  res.status(statusCode).json(healthResponse);
+});
 
-  /**
-   * GET /health/metrics
-   * Request metrics endpoint
-   */
-  router.get('/metrics', async (req: Request, res: Response) => {
-    try {
-      const metrics = conversionService.getMetrics();
-      
-      // Calculate summary statistics
-      const totalRequests = metrics.length;
-      const successfulRequests = metrics.filter(m => m.status === 'success').length;
-      const errorRequests = metrics.filter(m => m.status === 'error').length;
-      const pendingRequests = metrics.filter(m => m.status === 'pending').length;
-      
-      const completedRequests = metrics.filter(m => m.duration !== undefined);
-      const avgDuration = completedRequests.length > 0 
-        ? completedRequests.reduce((sum, m) => sum + (m.duration || 0), 0) / completedRequests.length
-        : 0;
+// GET /health/ready - 就绪检查（Kubernetes readiness probe）
+router.get('/ready', (req: Request, res: Response) => {
+  const requestId = req.requestId!;
+  
+  logger.debug('Readiness check requested', { requestId });
+  
+  // 简单的就绪检查
+  const readyResponse = {
+    status: 'ready',
+    timestamp: new Date().toISOString()
+  };
+  
+  res.json(readyResponse);
+});
 
-      const totalTokens = metrics.reduce((sum, m) => 
-        sum + (m.inputTokens || 0) + (m.outputTokens || 0), 0);
+// GET /health/live - 存活检查（Kubernetes liveness probe）
+router.get('/live', (req: Request, res: Response) => {
+  const requestId = req.requestId!;
+  
+  logger.debug('Liveness check requested', { requestId });
+  
+  // 简单的存活检查
+  const liveResponse = {
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  };
+  
+  res.json(liveResponse);
+});
 
-      const metricsResponse = {
-        summary: {
-          totalRequests,
-          successfulRequests,
-          errorRequests,
-          pendingRequests,
-          successRate: totalRequests > 0 ? (successfulRequests / totalRequests * 100).toFixed(2) : '0',
-          averageDuration: Math.round(avgDuration),
-          totalTokens
-        },
-        requests: metrics
-      };
-
-      res.json(metricsResponse);
-
-    } catch (error) {
-      console.error('Metrics endpoint error:', error);
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'Failed to fetch metrics'
-      });
-    }
-  });
-
-  return router;
-}
+export default router;

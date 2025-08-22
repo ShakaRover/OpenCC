@@ -4,7 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import type { AnthropicError, StandardError } from '@/types/index.js';
+import type { AnthropicError, StandardError } from '../types/index.js';
 
 /**
  * Global error handler middleware
@@ -83,7 +83,8 @@ export function validationErrorHandler(
       }
     };
 
-    return res.status(400).json(anthropicError);
+    res.status(400).json(anthropicError);
+    return;
   }
 
   next(error);
@@ -108,7 +109,8 @@ export function timeoutErrorHandler(
       }
     };
 
-    return res.status(408).json(anthropicError);
+    res.status(408).json(anthropicError);
+    return;
   }
 
   next(error);

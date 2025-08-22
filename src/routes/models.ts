@@ -1,112 +1,79 @@
-/**
- * Models Route Handler
- * Handles /v1/models endpoint for listing available models
- */
+import express, { Request, Response } from 'express';
+import { logger, generateRequestId } from '../utils/helpers.js';
+import { oauthMiddleware } from '../middleware/oauth.js';
 
-import { Router, Request, Response } from 'express';
-import type { AnthropicError } from '@/types/index.js';
-import { ConversionService } from '@/services/index.js';
-import { configManager } from '@/config/index.js';
+const router = express.Router();
 
-export function createModelsRouter(conversionService: ConversionService): Router {
-  const router = Router();
+// 中间件：生成请求ID
+router.use((req: Request, res: Response, next) => {
+  req.requestId = generateRequestId();
+  next();
+});
 
-  /**
-   * GET /v1/models
-   * List all available models in Anthropic format
-   */
-  router.get('/', async (req: Request, res: Response) => {
-    try {
-      const supportedModels = await conversionService.getSupportedModels();
-      const modelMapping = configManager.getModelMapping();
+// 中间件：可选认证
+router.use(oauthMiddleware.optionalAuth);
 
-      const models = supportedModels.models.map(modelId => {
-        const mapping = modelMapping[modelId];
-        return {
-          id: modelId,
-          object: 'model',
-          created: 1677610602, // Fixed timestamp for consistency
-          owned_by: 'anthropic',
-          capabilities: mapping?.capabilities || [],
-          context_length: mapping?.contextLength || 200000,
-          max_tokens: mapping?.maxTokens || 4096
-        };
-      });
-
-      const response = {
-        object: 'list',
-        data: models
-      };
-
-      res.json(response);
-
-    } catch (error) {
-      console.error('Models route error:', error);
-      
-      const anthropicError: AnthropicError = {
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: error instanceof Error ? error.message : 'Failed to fetch models'
-        }
-      };
-
-      res.status(500).json(anthropicError);
-    }
+// GET /v1/models - 返回qwen3-coder-plus模型信息
+router.get('/', (req: Request, res: Response) => {
+  const requestId = req.requestId!;
+  
+  logger.info('Models endpoint accessed', {
+    requestId,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip
   });
-
-  /**
-   * GET /v1/models/:model_id
-   * Get specific model information
-   */
-  router.get('/:model_id', async (req: Request, res: Response) => {
-    try {
-      const modelId = req.params.model_id;
-      const modelMapping = configManager.getModelMapping();
-      const mapping = modelMapping[modelId];
-
-      if (!mapping) {
-        const anthropicError: AnthropicError = {
-          type: 'error',
-          error: {
-            type: 'invalid_request_error',
-            message: `Model '${modelId}' not found`
-          }
-        };
-
-        return res.status(404).json(anthropicError);
-      }
-
-      const modelInfo = {
-        id: modelId,
+  
+  // 根据设计文档，我们只支持qwen3-coder-plus模型
+  const modelsResponse = {
+    object: 'list',
+    data: [
+      {
+        id: 'qwen3-coder-plus',
         object: 'model',
-        created: 1677610602,
+        created: 1704067200, // 固定时间戳
+        owned_by: 'qwen',
+        permission: [],
+        root: 'qwen3-coder-plus',
+        parent: null
+      },
+      // 也支持Anthropic模型名称（但实际会映射到qwen3-coder-plus）
+      {
+        id: 'claude-3-opus-20240229',
+        object: 'model',
+        created: 1704067200,
         owned_by: 'anthropic',
-        capabilities: mapping.capabilities || [],
-        context_length: mapping.contextLength || 200000,
-        max_tokens: mapping.maxTokens || 4096,
-        mapped_to: {
-          openai_model: mapping.openaiModel,
-          description: `Maps to OpenAI ${mapping.openaiModel}`
-        }
-      };
-
-      res.json(modelInfo);
-
-    } catch (error) {
-      console.error('Model info route error:', error);
-      
-      const anthropicError: AnthropicError = {
-        type: 'error',
-        error: {
-          type: 'api_error',
-          message: error instanceof Error ? error.message : 'Failed to fetch model info'
-        }
-      };
-
-      res.status(500).json(anthropicError);
-    }
+        permission: [],
+        root: 'claude-3-opus-20240229',
+        parent: null
+      },
+      {
+        id: 'claude-3-sonnet-20240229',
+        object: 'model',
+        created: 1704067200,
+        owned_by: 'anthropic',
+        permission: [],
+        root: 'claude-3-sonnet-20240229',
+        parent: null
+      },
+      {
+        id: 'claude-3-haiku-20240307',
+        object: 'model',
+        created: 1704067200,
+        owned_by: 'anthropic',
+        permission: [],
+        root: 'claude-3-haiku-20240307',
+        parent: null
+      }
+    ]
+  };
+  
+  logger.debug('Returning models list', {
+    requestId,
+    modelCount: modelsResponse.data.length,
+    actualModel: 'qwen3-coder-plus'
   });
+  
+  res.json(modelsResponse);
+});
 
-  return router;
-}
+export default router;

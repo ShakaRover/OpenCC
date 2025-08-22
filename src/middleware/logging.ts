@@ -5,8 +5,8 @@
 
 import { Request, Response, NextFunction } from 'express';
 import winston from 'winston';
-import type { LoggingConfig } from '@/types/index.js';
-import { generateRequestId } from '@/utils/helpers.js';
+import type { LoggingConfig } from '../types/index.js';
+import { generateRequestId } from '../utils/helpers.js';
 
 interface LoggedRequest extends Request {
   startTime?: number;
@@ -72,7 +72,7 @@ export function requestLogger(logger: winston.Logger, verboseLogging: boolean = 
 
     // Override res.end to capture response
     const originalEnd = res.end;
-    res.end = function(chunk?: any) {
+    res.end = function(chunk?: any, encoding?: any, cb?: any) {
       const duration = Date.now() - (req.startTime || Date.now());
       
       const responseLogData: any = {
@@ -98,7 +98,7 @@ export function requestLogger(logger: winston.Logger, verboseLogging: boolean = 
         logger.info('Request completed successfully', responseLogData);
       }
 
-      originalEnd.call(this, chunk);
+      return originalEnd.call(this, chunk, encoding, cb);
     };
 
     next();

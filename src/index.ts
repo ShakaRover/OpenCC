@@ -1,115 +1,73 @@
-/**
- * OpenClaude Protocol Converter
- * Main entry point for the application
- */
+import app from './app.js';
+import { logger } from './utils/helpers.js';
 
-import { createApp, setupGracefulShutdown, startCleanupTasks } from './app.js';
-import { configManager } from '@/config/index.js';
+// 从环境变量获取端口，默认是26666
+const PORT = parseInt(process.env.PORT || '26666', 10);
+const HOST = process.env.HOST || 'localhost';
 
-async function main(): Promise<void> {
+// 启动服务器
+async function startServer() {
   try {
-    console.log('🚀 Starting OpenClaude Protocol Converter...');
-    
-    // Validate configuration
-    const validation = configManager.validateConfig();
-    if (!validation.valid) {
-      console.error('❌ Configuration validation failed:');
-      validation.errors.forEach(error => console.error(`  - ${error}`));
-      process.exit(1);
-    }
-    
-    console.log('✅ Configuration validated successfully');
-    
-    // Get server configuration
-    const serverConfig = configManager.getServerConfig();
-    const envInfo = configManager.getEnvironmentInfo();
-    
-    console.log('📋 Environment Information:');
-    console.log(`  - Node.js: ${envInfo.nodeVersion}`);
-    console.log(`  - Platform: ${envInfo.platform} (${envInfo.arch})`);
-    console.log(`  - Environment: ${serverConfig.nodeEnv}`);
-    console.log(`  - Debug Mode: ${configManager.getConfig().debugMode ? 'ON' : 'OFF'}`);
-    
-    // Create Express application
-    const app = await createApp();
-    console.log('✅ Express application created');
-    
-    // Setup graceful shutdown
-    setupGracefulShutdown(app);
-    console.log('✅ Graceful shutdown handlers registered');
-    
-    // Start cleanup tasks
-    startCleanupTasks(app);
-    console.log('✅ Cleanup tasks started');
-    
-    // Start server
-    const server = app.listen(serverConfig.port, serverConfig.host, () => {
-      console.log('🎉 OpenClaude Protocol Converter is running!');
-      console.log(`📡 Server: http://${serverConfig.host}:${serverConfig.port}`);
-      console.log('📚 API Endpoints:');
-      console.log(`  - Messages: http://${serverConfig.host}:${serverConfig.port}/v1/messages`);
-      console.log(`  - Models: http://${serverConfig.host}:${serverConfig.port}/v1/models`);
-      console.log(`  - Health: http://${serverConfig.host}:${serverConfig.port}/health`);
-      console.log('');
-      console.log('📖 Usage Example:');
-      console.log('curl -X POST http://localhost:26666/v1/messages \\');
-      console.log('  -H "Content-Type: application/json" \\');
-      console.log('  -H "x-api-key: your-api-key" \\');
-      console.log('  -d \'{"model": "claude-3-opus-20240229", "max_tokens": 100, "messages": [{"role": "user", "content": "Hello!"}]}\'');
-      console.log('');
-      
-      // Display feature flags
-      const features = configManager.getFeatureFlags();
-      console.log('🏁 Feature Flags:');
-      console.log(`  - Audio Support: ${features.enableAudioSupport ? 'ENABLED' : 'DISABLED'}`);
-      console.log(`  - File Support: ${features.enableFileSupport ? 'ENABLED' : 'DISABLED'}`);
-      console.log(`  - Prompt Caching: ${features.enablePromptCaching ? 'ENABLED' : 'DISABLED'}`);
-      console.log(`  - Metrics: ${features.enableMetrics ? 'ENABLED' : 'DISABLED'}`);
-      console.log('');
-      
-      // Display supported models
-      const supportedModels = configManager.getSupportedModels();
-      console.log(`🤖 Supported Models (${supportedModels.length}):`);
-      supportedModels.forEach(model => {
-        const mapping = configManager.getModelMappingFor(model);
-        console.log(`  - ${model} → ${mapping?.openaiModel || 'unknown'}`);
-      });
-      console.log('');
-      console.log('✨ Ready to convert Anthropic requests to OpenAI format!');
+    logger.info('Starting Qwen API proxy server...', {
+      port: PORT,
+      host: HOST,
+      nodeEnv: process.env.NODE_ENV || 'development',
+      nodeVersion: process.version
     });
     
-    // Handle server errors
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'EADDRINUSE') {
-        console.error(`❌ Port ${serverConfig.port} is already in use`);
-      } else if (error.code === 'EACCES') {
-        console.error(`❌ Permission denied for port ${serverConfig.port}`);
+    const server = app.listen(PORT, HOST, () => {
+      logger.info('Server started successfully', {
+        message: `Qwen API proxy server is running on http://${HOST}:${PORT}`,
+        port: PORT,
+        host: HOST,
+        endpoints: {
+          health: `http://${HOST}:${PORT}/health`,
+          messages: `http://${HOST}:${PORT}/v1/messages`,
+          models: `http://${HOST}:${PORT}/v1/models`
+        }
+      });
+      
+      logger.info('Setup instructions', {
+        message: 'To use with Claude Code, set these environment variables:',
+        instructions: [
+          `export ANTHROPIC_BASE_URL=http://127.0.0.1:${PORT}`,
+          'export ANTHROPIC_AUTH_TOKEN=sk-qwen'
+        ]
+      });
+    });
+    
+    // 处理服务器错误
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        logger.error('Port already in use', {
+          port: PORT,
+          host: HOST,
+          suggestion: `Please try a different port by setting PORT environment variable`
+        });
       } else {
-        console.error('❌ Server error:', error.message);
+        logger.error('Server error', {
+          error: err.message,
+          code: err.code,
+          stack: err.stack
+        });
       }
       process.exit(1);
     });
     
   } catch (error) {
-    console.error('❌ Failed to start OpenClaude Protocol Converter:');
-    console.error(error);
+    logger.error('Failed to start server', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
     process.exit(1);
   }
 }
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
-});
-
-// Start the application
-main().catch((error) => {
-  console.error('❌ Application startup failed:', error);
+// 启动服务
+startServer().catch((error) => {
+  logger.error('Unhandled error during startup', {
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined
+  });
   process.exit(1);
 });

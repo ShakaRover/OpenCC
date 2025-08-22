@@ -3,438 +3,172 @@
  * Converts Anthropic API requests to OpenAI API format
  */
 
-import type {
-  AnthropicRequest,
-  AnthropicMessage,
-  AnthropicContent,
-  AnthropicTool,
-  OpenAIRequest,
-  OpenAIMessage,
-  OpenAITool,
-  ConversionResult,
-  ConversionContext,
-  StandardError,
-  ModelMapping
-} from '@/types/index.js';
+import { logger, extractTextFromContent } from '../utils/helpers.js';
 
-import { 
-  flattenContentToString,
-  validateTemperature,
-  hasUnsupportedContent,
-  removeUndefined,
-  generateRequestId
-} from '@/utils/helpers.js';
+// Anthropic API 类型定义
+interface AnthropicMessage {
+  role: 'user' | 'assistant';
+  content: string | Array<{ type: 'text'; text: string }>;
+}
+
+interface AnthropicRequest {
+  model: string;
+  max_tokens: number;
+  messages: AnthropicMessage[];
+  temperature?: number;
+  stream?: boolean;
+  stop?: string | string[];
+  top_p?: number;
+  top_k?: number;
+}
+
+// OpenAI API 类型定义
+interface OpenAIMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+interface OpenAIRequest {
+  model: string;
+  messages: OpenAIMessage[];
+  max_tokens?: number;
+  temperature?: number;
+  stream?: boolean;
+  stop?: string | string[];
+  top_p?: number;
+}
 
 export class AnthropicToOpenAIConverter {
-  private modelMapping: ModelMapping;
+  private readonly targetModel = 'qwen3-coder-plus';
 
-  constructor(modelMapping: ModelMapping) {
-    this.modelMapping = modelMapping;
+  /**
+   * 将Anthropic请求转换为OpenAI格式
+   */
+  convertRequest(anthropicRequest: AnthropicRequest, requestId: string): OpenAIRequest {
+    // 记录原始模型信息到日志
+    logger.info('Converting Anthropic request to OpenAI format', {
+      requestId,
+      originalModel: anthropicRequest.model,
+      targetModel: this.targetModel,
+      messageCount: anthropicRequest.messages?.length || 0,
+      maxTokens: anthropicRequest.max_tokens,
+      temperature: anthropicRequest.temperature,
+      stream: anthropicRequest.stream
+    });
+
+    const openaiRequest: OpenAIRequest = {
+      model: this.targetModel, // 固定使用qwen3-coder-plus模型
+      messages: this.convertMessages(anthropicRequest.messages, requestId),
+      max_tokens: anthropicRequest.max_tokens,
+      temperature: anthropicRequest.temperature,
+      stream: anthropicRequest.stream,
+      stop: anthropicRequest.stop,
+      top_p: anthropicRequest.top_p
+    };
+
+    // 移除undefined值
+    Object.keys(openaiRequest).forEach(key => {
+      if (openaiRequest[key as keyof OpenAIRequest] === undefined) {
+        delete openaiRequest[key as keyof OpenAIRequest];
+      }
+    });
+
+    logger.debug('Request conversion completed', {
+      requestId,
+      convertedMessageCount: openaiRequest.messages.length
+    });
+
+    return openaiRequest;
   }
 
   /**
-   * Convert Anthropic request to OpenAI format
+   * 转换消息数组
    */
-  async convertRequest(
-    anthropicRequest: AnthropicRequest,
-    context: ConversionContext
-  ): Promise<ConversionResult<OpenAIRequest>> {
-    try {
-      // Validate required parameters
-      const validation = this.validateRequest(anthropicRequest);
-      if (!validation.success) {
-        return {
-          success: false,
-          error: validation.error,
-          context
-        };
-      }
+  private convertMessages(messages: AnthropicMessage[], requestId: string): OpenAIMessage[] {
+    if (!Array.isArray(messages)) {
+      logger.warn('Invalid messages format, expected array', { requestId, messagesType: typeof messages });
+      return [];
+    }
 
-      // Check for unsupported features
-      const unsupportedCheck = this.checkUnsupportedFeatures(anthropicRequest);
-      if (!unsupportedCheck.success) {
-        return {
-          success: false,
-          error: unsupportedCheck.error,
-          context
-        };
-      }
-
-      // Map model
-      const modelMapping = this.mapModel(anthropicRequest.model);
-      if (!modelMapping) {
-        return {
-          success: false,
-          error: {
-            type: 'invalid_request_error',
-            message: `Unsupported model: ${anthropicRequest.model}`
-          },
-          context
-        };
-      }
-
-      // Convert messages
-      const messagesResult = this.convertMessages(anthropicRequest);
-      if (!messagesResult.success) {
-        return {
-          success: false,
-          error: messagesResult.error,
-          context
-        };
-      }
-
-      // Convert tools if present
-      let tools: OpenAITool[] | undefined;
-      let toolChoice: any = undefined;
+    return messages.map((msg, index) => {
+      const convertedContent = this.convertContent(msg.content, requestId, index);
       
-      if (anthropicRequest.tools) {
-        const toolsResult = this.convertTools(anthropicRequest.tools);
-        if (!toolsResult.success) {
-          return {
-            success: false,
-            error: toolsResult.error,
-            context
-          };
-        }
-        tools = toolsResult.data;
-        
-        // Convert tool choice
-        if (anthropicRequest.tool_choice) {
-          toolChoice = this.convertToolChoice(anthropicRequest.tool_choice);
-        }
-      }
-
-      // Build OpenAI request
-      const openaiRequest: OpenAIRequest = removeUndefined({
-        model: modelMapping.openaiModel,
-        messages: messagesResult.data!,
-        max_tokens: this.adjustMaxTokens(anthropicRequest.max_tokens, modelMapping),
-        temperature: anthropicRequest.temperature ? 
-          validateTemperature(anthropicRequest.temperature, 'openai') : undefined,
-        top_p: anthropicRequest.top_p,
-        stream: anthropicRequest.stream,
-        stop: anthropicRequest.stop_sequences,
-        tools,
-        tool_choice: toolChoice,
-        user: anthropicRequest.metadata?.user_id
-      });
-
       return {
-        success: true,
-        data: openaiRequest,
-        context
+        role: msg.role,
+        content: convertedContent
       };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          type: 'internal_error',
-          message: `Conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        },
-        context
-      };
-    }
+    });
   }
 
   /**
-   * Validate Anthropic request
+   * 转换消息内容
    */
-  private validateRequest(request: AnthropicRequest): { success: boolean; error?: StandardError } {
-    if (!request.model) {
-      return {
-        success: false,
-        error: {
-          type: 'invalid_request_error',
-          message: 'Missing required parameter: model'
-        }
-      };
+  private convertContent(content: string | Array<{ type: 'text'; text: string }>, requestId: string, messageIndex: number): string {
+    if (typeof content === 'string') {
+      return content;
     }
 
-    if (!request.max_tokens || request.max_tokens <= 0) {
-      return {
-        success: false,
-        error: {
-          type: 'invalid_request_error',
-          message: 'Missing or invalid required parameter: max_tokens'
-        }
-      };
-    }
-
-    if (!request.messages || !Array.isArray(request.messages) || request.messages.length === 0) {
-      return {
-        success: false,
-        error: {
-          type: 'invalid_request_error',
-          message: 'Missing or empty required parameter: messages'
-        }
-      };
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Check for unsupported features and return appropriate errors
-   */
-  private checkUnsupportedFeatures(request: AnthropicRequest): { success: boolean; error?: StandardError } {
-    // Check for audio or file content in messages
-    for (const message of request.messages) {
-      if (Array.isArray(message.content)) {
-        const { hasUnsupported, unsupportedTypes } = hasUnsupportedContent(message.content);
-        if (hasUnsupported) {
-          const typeMessage = unsupportedTypes.includes('input_audio') ? 
-            '音频输入功能暂不支持，请使用纯文本输入' :
-            '文件上传功能暂不支持，请将文件内容转换为文本后输入';
-            
-          return {
-            success: false,
-            error: {
-              type: 'not_supported_error',
-              message: typeMessage
-            }
-          };
-        }
-      }
-    }
-
-    return { success: true };
-  }
-
-  /**
-   * Map Anthropic model to OpenAI model
-   */
-  private mapModel(anthropicModel: string): ModelMapping[string] | undefined {
-    return this.modelMapping[anthropicModel];
-  }
-
-  /**
-   * Convert Anthropic messages to OpenAI format
-   */
-  private convertMessages(request: AnthropicRequest): { success: boolean; data?: OpenAIMessage[]; error?: StandardError } {
-    try {
-      const openaiMessages: OpenAIMessage[] = [];
-
-      // Add system message if present
-      if (request.system) {
-        // Augment system message with metadata if present
-        let systemContent = request.system;
-        
-        if (request.metadata || request.anthropic_version) {
-          systemContent += this.buildContextPrompt(request.metadata, request.anthropic_version);
-        }
-
-        openaiMessages.push({
-          role: 'system',
-          content: systemContent
+    if (Array.isArray(content)) {
+      const textContent = extractTextFromContent(content);
+      
+      // 检查是否有非文本内容
+      const nonTextBlocks = content.filter(block => block.type !== 'text');
+      if (nonTextBlocks.length > 0) {
+        logger.warn('Non-text content blocks detected and will be filtered out', {
+          requestId,
+          messageIndex,
+          nonTextBlockTypes: nonTextBlocks.map(block => block.type),
+          nonTextBlockCount: nonTextBlocks.length
         });
       }
 
-      // Convert user and assistant messages
-      for (const message of request.messages) {
-        const convertedMessage = this.convertSingleMessage(message);
-        if (!convertedMessage) {
-          return {
-            success: false,
-            error: {
-              type: 'invalid_request_error',
-              message: 'Failed to convert message'
-            }
-          };
-        }
-        openaiMessages.push(convertedMessage);
-      }
-
-      return {
-        success: true,
-        data: openaiMessages
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          type: 'internal_error',
-          message: `Message conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }
-      };
+      return textContent;
     }
+
+    logger.warn('Unexpected content format', {
+      requestId,
+      messageIndex,
+      contentType: typeof content
+    });
+
+    return '';
   }
 
   /**
-   * Convert a single Anthropic message to OpenAI format
+   * 验证请求格式
    */
-  private convertSingleMessage(message: AnthropicMessage): OpenAIMessage | null {
-    try {
-      // Handle tool calls and tool results
-      if (Array.isArray(message.content)) {
-        const hasToolUse = message.content.some(item => item.type === 'tool_use');
-        const hasToolResult = message.content.some(item => item.type === 'tool_result');
+  validateRequest(request: any): { isValid: boolean; errors: string[] } {
+    const errors: string[] = [];
 
-        if (hasToolUse && message.role === 'assistant') {
-          return this.convertAssistantMessageWithTools(message);
-        }
-
-        if (hasToolResult && message.role === 'user') {
-          return this.convertUserMessageWithToolResults(message);
-        }
-      }
-
-      // Regular message conversion
-      return {
-        role: message.role === 'user' ? 'user' : 'assistant',
-        content: flattenContentToString(message.content)
-      };
-
-    } catch {
-      return null;
+    if (!request.model) {
+      errors.push('Missing required field: model');
     }
-  }
 
-  /**
-   * Convert assistant message with tool calls
-   */
-  private convertAssistantMessageWithTools(message: AnthropicMessage): OpenAIMessage {
-    const content = Array.isArray(message.content) ? message.content : [];
-    const textContent = content
-      .filter(item => item.type === 'text')
-      .map(item => (item as any).text)
-      .join('\n');
+    if (!request.max_tokens) {
+      errors.push('Missing required field: max_tokens');
+    }
 
-    const toolCalls = content
-      .filter(item => item.type === 'tool_use')
-      .map((item: any) => ({
-        id: item.id,
-        type: 'function' as const,
-        function: {
-          name: item.name,
-          arguments: JSON.stringify(item.input)
+    if (!Array.isArray(request.messages)) {
+      errors.push('Missing or invalid field: messages (must be array)');
+    } else {
+      request.messages.forEach((msg: any, index: number) => {
+        if (!msg.role) {
+          errors.push(`Message ${index}: missing role`);
         }
-      }));
-
-    return {
-      role: 'assistant',
-      content: textContent || null,
-      tool_calls: toolCalls.length > 0 ? toolCalls : undefined
-    };
-  }
-
-  /**
-   * Convert user message with tool results
-   */
-  private convertUserMessageWithToolResults(message: AnthropicMessage): OpenAIMessage {
-    const content = Array.isArray(message.content) ? message.content : [];
-    
-    // For tool results, we need to create separate tool messages
-    // This is a simplified approach - in practice, you might need multiple messages
-    const textParts: string[] = [];
-    
-    for (const item of content) {
-      if (item.type === 'text') {
-        textParts.push((item as any).text);
-      } else if (item.type === 'tool_result') {
-        const toolResult = item as any;
-        textParts.push(`Tool result: ${typeof toolResult.content === 'string' ? toolResult.content : JSON.stringify(toolResult.content)}`);
-      }
+        if (!msg.content) {
+          errors.push(`Message ${index}: missing content`);
+        }
+        if (msg.role && !['user', 'assistant'].includes(msg.role)) {
+          errors.push(`Message ${index}: invalid role '${msg.role}' (must be 'user' or 'assistant')`);
+        }
+      });
     }
 
     return {
-      role: 'user',
-      content: textParts.join('\n')
+      isValid: errors.length === 0,
+      errors
     };
-  }
-
-  /**
-   * Convert Anthropic tools to OpenAI format
-   */
-  private convertTools(anthropicTools: AnthropicTool[]): { success: boolean; data?: OpenAITool[]; error?: StandardError } {
-    try {
-      const openaiTools: OpenAITool[] = anthropicTools.map(tool => ({
-        type: 'function',
-        function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.input_schema
-        }
-      }));
-
-      return {
-        success: true,
-        data: openaiTools
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          type: 'internal_error',
-          message: `Tool conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }
-      };
-    }
-  }
-
-  /**
-   * Convert Anthropic tool choice to OpenAI format
-   */
-  private convertToolChoice(anthropicToolChoice: any): any {
-    if (anthropicToolChoice.type === 'auto') {
-      return 'auto';
-    }
-    
-    if (anthropicToolChoice.type === 'tool' && anthropicToolChoice.name) {
-      return {
-        type: 'function',
-        function: {
-          name: anthropicToolChoice.name
-        }
-      };
-    }
-
-    return 'auto';
-  }
-
-  /**
-   * Adjust max_tokens for OpenAI limits
-   */
-  private adjustMaxTokens(maxTokens: number, modelMapping: ModelMapping[string]): number {
-    return Math.min(maxTokens, modelMapping.maxTokens);
-  }
-
-  /**
-   * Build context prompt for metadata
-   */
-  private buildContextPrompt(metadata?: any, anthropicVersion?: string): string {
-    const contextParts: string[] = [];
-
-    if (metadata) {
-      const contextInfo: string[] = [];
-      
-      if (metadata.user_id) {
-        contextInfo.push(`用户ID: ${metadata.user_id}`);
-      }
-      
-      if (metadata.session_id) {
-        contextInfo.push(`会话ID: ${metadata.session_id}`);
-      }
-      
-      if (metadata.application) {
-        contextInfo.push(`应用场景: ${metadata.application}`);
-      }
-      
-      if (metadata.priority) {
-        contextInfo.push(`优先级: ${metadata.priority}`);
-      }
-
-      if (contextInfo.length > 0) {
-        contextParts.push(`\n\n[CONTEXT_INFO: ${contextInfo.join(', ')}]`);
-      }
-    }
-
-    if (anthropicVersion) {
-      contextParts.push(`\n[API_VERSION: 使用${anthropicVersion}版本的响应风格和能力]`);
-    }
-
-    return contextParts.join('');
   }
 }
+
+export const anthropicToOpenAIConverter = new AnthropicToOpenAIConverter();
