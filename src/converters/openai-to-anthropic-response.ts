@@ -176,8 +176,10 @@ export class OpenAIToAnthropicResponseConverter {
         chunks.push(`event: content_block_start\\ndata: ${JSON.stringify(contentBlockStartEvent)}\\n\\n`);
       }
 
-      // 处理内容增量
+      // 处理内容增量和工具调用
       const choice = openaiChunk.choices?.[0];
+      
+      // 处理文本内容增量
       if (choice?.delta?.content) {
         const deltaEvent = {
           type: 'content_block_delta',
@@ -190,9 +192,70 @@ export class OpenAIToAnthropicResponseConverter {
 
         chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(deltaEvent)}\\n\\n`);
       }
+      
+      // 处理工具调用增量
+      if (choice?.delta?.tool_calls) {
+        for (const toolCall of choice.delta.tool_calls) {
+          if (toolCall.type === 'function' && toolCall.function) {
+            const toolIndex = (toolCall.index || 0) + 1; // 文本块是index 0，工具调用从1开始
+            
+            // 如果是工具调用的开始，发送 content_block_start 事件
+            if (toolCall.id && toolCall.function.name) {
+              const toolBlockStartEvent = {
+                type: 'content_block_start',
+                index: toolIndex,
+                content_block: {
+                  type: 'tool_use',
+                  id: toolCall.id,
+                  name: toolCall.function.name,
+                  input: {}
+                }
+              };
+              
+              chunks.push(`event: content_block_start\\ndata: ${JSON.stringify(toolBlockStartEvent)}\\n\\n`);
+              
+              logger.debug('Started tool call block in stream', {
+                requestId,
+                toolCallId: toolCall.id,
+                toolName: toolCall.function.name,
+                index: toolIndex
+              });
+            }
+            
+            // 如果有参数增量，发送 content_block_delta 事件
+            if (toolCall.function.arguments) {
+              const toolDeltaEvent = {
+                type: 'content_block_delta',
+                index: toolIndex,
+                delta: {
+                  type: 'input_json_delta',
+                  partial_json: toolCall.function.arguments
+                }
+              };
+              
+              chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(toolDeltaEvent)}\\n\\n`);
+            }
+          }
+        }
+      }
 
       // 处理结束信号
       if (choice?.finish_reason) {
+        // 如果有工具调用，需要先关闭所有工具调用块
+        if (choice.delta?.tool_calls || choice.message?.tool_calls) {
+          const toolCallsCount = choice.delta?.tool_calls?.length || choice.message?.tool_calls?.length || 0;
+          
+          // 关闭所有工具调用块
+          for (let i = 1; i <= toolCallsCount; i++) {
+            const toolBlockStopEvent = {
+              type: 'content_block_stop',
+              index: i
+            };
+            chunks.push(`event: content_block_stop\\ndata: ${JSON.stringify(toolBlockStopEvent)}\\n\\n`);
+          }
+        }
+        
+        // 关闭文本块
         const contentBlockStopEvent = {
           type: 'content_block_stop',
           index: 0
@@ -223,6 +286,17 @@ export class OpenAIToAnthropicResponseConverter {
         error: error instanceof Error ? error.message : String(error),
         chunk: openaiChunk
       });
+      
+      // 发送错误事件到流中
+      const errorEvent = {
+        type: 'error',
+        error: {
+          type: 'api_error',
+          message: 'Error processing stream chunk'
+        }
+      };
+      
+      chunks.push(`event: error\\ndata: ${JSON.stringify(errorEvent)}\\n\\n`);
     }
 
     return chunks;
