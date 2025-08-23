@@ -110,7 +110,7 @@ export class QwenOAuthManager {
         access_token: data.access_token,
         refresh_token: data.refresh_token || refreshToken, // 有些情况下refresh_token可能不变
         expiry_date: Date.now() + data.expires_in * 1000 - 60000, // 提前1分钟过期
-        resource_url: data.resource_url || this.oauth_creds?.resource_url || 'chat.qwen.ai'
+        resource_url: data.resource_url || this.oauth_creds?.resource_url || 'portal.qwen.ai'
       };
 
       // 更新内存中的凭证
