@@ -128,9 +128,16 @@ app.use('/v1/messages', messagesRouter);
 app.use('/v1/models', modelsRouter);
 app.use('/health', healthRouter);
 
-// 根路径重定向到健康检查
-app.get('/', (req, res) => {
-  res.redirect('/health');
+// 根路径处理所有HTTP方法
+app.all('/', (req, res) => {
+  logger.debug('Root path request', {
+    method: req.method,
+    url: req.url,
+    userAgent: req.get('User-Agent'),
+    ip: req.ip
+  });
+  
+  res.status(200).send('OpenCC');
 });
 
 // 处理favicon.ico请求
