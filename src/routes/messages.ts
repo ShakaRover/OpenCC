@@ -1,8 +1,11 @@
 import express, { Request, Response } from 'express';
 import { logger, generateRequestId, logRequestStart, logRequestEnd } from '../utils/helpers.js';
+import { configManager } from '../config/index.js';
 import { oauthMiddleware } from '../middleware/oauth.js';
 import { anthropicToOpenAIConverter } from '../converters/anthropic-to-openai.js';
 import { openaiToAnthropicResponseConverter } from '../converters/openai-to-anthropic-response.js';
+import { OpenAIService } from '../services/openai-service.js';
+import type { ConversionContext } from '../types/index.js';
 
 const router = express.Router();
 

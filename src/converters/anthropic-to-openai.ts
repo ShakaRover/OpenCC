@@ -4,23 +4,26 @@
  */
 
 import { logger, extractTextFromContent } from '../utils/helpers.js';
+import { configManager } from '../config/index.js';
 import { AnthropicTool, AnthropicRequest, AnthropicMessage, AnthropicContent, AnthropicToolUseContent, AnthropicToolResultContent } from '../types/anthropic.js';
 import { OpenAITool, OpenAIRequest, OpenAIMessage, OpenAIToolChoice } from '../types/openai.js';
 
 // 删除本地类型定义，使用导入的类型
 
 export class AnthropicToOpenAIConverter {
-  private readonly targetModel = 'qwen3-coder-plus';
-
   /**
    * 将Anthropic请求转换为OpenAI格式
    */
   convertRequest(anthropicRequest: AnthropicRequest, requestId: string): OpenAIRequest {
+    // 根据配置获取有效的目标模型
+    const targetModel = this.getTargetModel(anthropicRequest.model);
+    
     // 记录原始模型信息到日志
     logger.info('Converting Anthropic request to OpenAI format', {
       requestId,
       originalModel: anthropicRequest.model,
-      targetModel: this.targetModel,
+      targetModel,
+      configMode: configManager.getConfigMode(),
       messageCount: anthropicRequest.messages?.length || 0,
       maxTokens: anthropicRequest.max_tokens,
       temperature: anthropicRequest.temperature,
@@ -28,7 +31,7 @@ export class AnthropicToOpenAIConverter {
     });
 
     const openaiRequest: OpenAIRequest = {
-      model: this.targetModel, // 固定使用qwen3-coder-plus模型
+      model: targetModel,
       messages: this.convertMessages(anthropicRequest.messages, requestId),
       max_tokens: anthropicRequest.max_tokens,
       temperature: anthropicRequest.temperature,
@@ -52,6 +55,22 @@ export class AnthropicToOpenAIConverter {
     });
 
     return openaiRequest;
+  }
+  
+  /**
+   * 根据配置获取目标模型
+   */
+  private getTargetModel(requestedModel: string): string {
+    const configMode = configManager.getConfigMode();
+    
+    if (configMode === 'qwen-cli') {
+      // qwen-cli模式：首先尝试映射，然后使用默认模型
+      const mappedModel = configManager.getEffectiveModel(requestedModel);
+      return mappedModel === requestedModel ? 'qwen3-coder-plus' : mappedModel;
+    } else {
+      // 通用OpenAI模式：使用完整的映射逻辑
+      return configManager.getEffectiveModel(requestedModel);
+    }
   }
 
   /**

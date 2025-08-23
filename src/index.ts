@@ -1,25 +1,35 @@
 import app from './app.js';
 import { logger } from './utils/helpers.js';
-
-// 从环境变量获取端口，默认是26666
-const PORT = parseInt(process.env.PORT || '26666', 10);
-const HOST = process.env.HOST || 'localhost';
+import { configManager } from './config/index.js';
 
 // 启动服务器
 async function startServer() {
   try {
-    logger.info('Starting Qwen API proxy server...', {
+    // 初始化配置管理器并加载模型映射
+    await configManager.loadModelMapping();
+    
+    const config = configManager.getConfig();
+    const PORT = config.server.port;
+    const HOST = config.server.host;
+    const configMode = configManager.getConfigMode();
+    
+    logger.info('Starting OpenCC API proxy server...', {
       port: PORT,
       host: HOST,
-      nodeEnv: process.env.NODE_ENV || 'development',
-      nodeVersion: process.version
+      configMode,
+      nodeEnv: config.server.nodeEnv,
+      nodeVersion: process.version,
+      openaiBaseUrl: config.openai.baseUrl,
+      hasApiKey: !!config.openai.apiKey,
+      defaultModel: config.openai.defaultModel
     });
     
     const server = app.listen(PORT, HOST, () => {
       logger.info('Server started successfully', {
-        message: `Qwen API proxy server is running on http://${HOST}:${PORT}`,
+        message: `OpenCC API proxy server is running on http://${HOST}:${PORT}`,
         port: PORT,
         host: HOST,
+        configMode,
         endpoints: {
           health: `http://${HOST}:${PORT}/health`,
           messages: `http://${HOST}:${PORT}/v1/messages`,
@@ -27,13 +37,21 @@ async function startServer() {
         }
       });
       
-      logger.info('Setup instructions', {
-        message: 'To use with Claude Code, set these environment variables:',
-        instructions: [
-          `export ANTHROPIC_BASE_URL=http://127.0.0.1:${PORT}`,
-          'export ANTHROPIC_AUTH_TOKEN=sk-qwen'
-        ]
-      });
+      if (configMode === 'qwen-cli') {
+        logger.info('Qwen-CLI mode setup instructions', {
+          message: 'To use with Claude Code, set these environment variables:',
+          instructions: [
+            `export ANTHROPIC_BASE_URL=http://127.0.0.1:${PORT}`,
+            'export ANTHROPIC_AUTH_TOKEN=sk-qwen'
+          ]
+        });
+      } else {
+        logger.info('Universal OpenAI mode enabled', {
+          message: 'Using custom OpenAI configuration',
+          baseUrl: config.openai.baseUrl,
+          defaultModel: config.openai.defaultModel
+        });
+      }
     });
     
     // 处理服务器错误

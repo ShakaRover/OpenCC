@@ -67,6 +67,8 @@ LOG_LEVEL=info
 
 ### 4. 启动服务
 
+#### qwen-cli 模式（默认）
+
 ```bash
 # 开发模式（热重载）
 npm run dev
@@ -75,6 +77,26 @@ npm run dev
 npm run build
 npm start
 ```
+
+#### 通用 OpenAI 模式
+
+```bash
+# 使用自定义 OpenAI API
+npm start -- --openai-api-key sk-your-key-here --openai-base-url https://api.your-provider.com
+
+# 或通过环境变量
+export OPENAI_API_KEY=sk-your-key-here
+export OPENAI_BASE_URL=https://api.your-provider.com
+npm start
+```
+
+#### 支持的命令行参数
+
+- `--openai-api-key <key>`: OpenAI API 密钥
+- `--openai-base-url <url>`: OpenAI API 端点 URL
+- `--qwen-oauth-file <path>`: qwen OAuth 认证文件路径
+- `--model <model>`: 默认使用的模型
+- `--model-mapping <file|json>`: 模型映射文件或 JSON 数据
 
 ### 5. 验证服务
 
@@ -323,6 +345,14 @@ DEBUG_MODE=true npm run dev
 - 遵循 ESLint 和 Prettier 配置
 - 编写测试用例
 - 更新文档
+
+## 📚 文档链接
+
+- [通用 OpenAI 配置功能指南](docs/UNIVERSAL_OPENAI.md) - 详细的配置和使用说明
+- [API 参考文档](docs/API.md) - 完整的 API 接口文档
+- [开发指南](docs/DEVELOPMENT.md) - 开发环境搭建和扩展指南
+
+---
 
 ## 📝 许可证
 

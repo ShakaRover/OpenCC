@@ -5,14 +5,47 @@
 import type { AnthropicModel } from './anthropic.js';
 import type { OpenAIModel } from './openai.js';
 
-export interface ModelMapping {
+// 配置模式枚举
+export enum ConfigMode {
+  QWEN_CLI = 'qwen-cli',
+  UNIVERSAL_OPENAI = 'universal-openai'
+}
+
+// 命令行参数接口
+export interface CLIArguments {
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
+  qwenOauthFile?: string;
+  model?: string;
+  modelMapping?: string;
+}
+
+// 新的简化模型映射规则
+export interface ModelMappingRule {
+  pattern: string;
+  target: string;
+  type: 'contains' | 'exact' | 'prefix' | 'suffix';
+}
+
+// 新的增强模型映射格式
+export interface EnhancedModelMapping {
+  mappings: ModelMappingRule[];
+  defaultModel?: string;
+}
+
+// 保持向后兼容的原始模型映射格式
+export interface LegacyModelMapping {
   [anthropicModel: string]: {
     openaiModel: OpenAIModel;
-    contextLength: number;
-    maxTokens: number;
-    capabilities: string[];
+    contextLength?: number;  // 标记为可选，因为实际未使用
+    maxTokens?: number;      // 标记为可选，因为实际未使用
+    capabilities?: string[]; // 标记为可选，因为实际未使用
+    targetModel?: string;    // 新字段，与openaiModel等价
   };
 }
+
+// 统一的模型映射类型（支持两种格式）
+export type ModelMapping = EnhancedModelMapping | LegacyModelMapping;
 
 export interface ServerConfig {
   port: number;
@@ -27,6 +60,9 @@ export interface OpenAIConfig {
   baseUrl: string;
   timeout: number;
   maxRetries?: number;
+  configMode: ConfigMode;
+  oauthFilePath?: string;
+  defaultModel?: string;
 }
 
 export interface RateLimitConfig {

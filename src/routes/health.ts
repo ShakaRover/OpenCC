@@ -1,5 +1,6 @@
 import express, { Request, Response } from 'express';
 import { logger, generateRequestId } from '../utils/helpers.js';
+import { configManager } from '../config/index.js';
 import { oauthMiddleware } from '../middleware/oauth.js';
 
 const router = express.Router();
@@ -24,6 +25,11 @@ router.get('/', (req: Request, res: Response) => {
     ip: req.ip
   });
   
+  // 获取配置信息
+  const config = configManager.getConfig();
+  const configMode = configManager.getConfigMode();
+  const modelMapping = configManager.getModelMapping();
+  
   // 基本服务状态
   const serviceStatus = {
     status: 'healthy',
@@ -31,8 +37,9 @@ router.get('/', (req: Request, res: Response) => {
     uptime: process.uptime(),
     version: process.env.npm_package_version || '1.0.0',
     node_version: process.version,
-    environment: process.env.NODE_ENV || 'development',
-    port: process.env.PORT || 26666
+    environment: config.server.nodeEnv,
+    port: config.server.port,
+    configMode
   };
   
   // OAuth凭证状态
@@ -77,12 +84,12 @@ router.get('/', (req: Request, res: Response) => {
       model_configuration: {
         status: 'healthy',
         details: {
-          target_model: 'qwen3-coder-plus',
-          supported_anthropic_models: [
-            'claude-3-opus-20240229',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307'
-          ]
+          config_mode: configMode,
+          default_model: config.openai.defaultModel || (configMode === 'qwen-cli' ? 'qwen3-coder-plus' : 'none'),
+          mapping_rules_count: modelMapping.mappings.length,
+          has_default_mapping: !!modelMapping.defaultModel,
+          supported_anthropic_models: modelMapping.mappings.map(rule => rule.pattern),
+          openai_base_url: config.openai.baseUrl
         }
       }
     },

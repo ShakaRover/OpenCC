@@ -9,12 +9,17 @@ import fs from 'fs/promises';
 import type { 
   AppConfig, 
   ModelMapping,
+  EnhancedModelMapping,
+  LegacyModelMapping,
+  ModelMappingRule,
+  CLIArguments,
   ServerConfig,
   OpenAIConfig,
   RateLimitConfig,
   LoggingConfig,
   FeatureFlags
 } from '../types/index.js';
+import { ConfigMode } from '../types/index.js';
 
 // Load environment variables
 config();
@@ -22,11 +27,15 @@ config();
 export class ConfigManager {
   private static instance: ConfigManager;
   private config: AppConfig;
-  private modelMapping: ModelMapping;
+  private modelMapping: EnhancedModelMapping;
+  private configMode: ConfigMode;
+  private cliArgs: CLIArguments;
 
   private constructor() {
+    this.cliArgs = this.parseCliArguments();
+    this.configMode = this.detectConfigMode();
     this.config = this.loadConfig();
-    this.modelMapping = {};
+    this.modelMapping = { mappings: [] };
   }
 
   public static getInstance(): ConfigManager {
@@ -37,7 +46,70 @@ export class ConfigManager {
   }
 
   /**
-   * Load configuration from environment variables
+   * Parse command line arguments
+   */
+  private parseCliArguments(): CLIArguments {
+    const args = process.argv.slice(2);
+    const cliArgs: CLIArguments = {};
+    
+    for (let i = 0; i < args.length; i++) {
+      switch (args[i]) {
+        case '--openai-api-key':
+          cliArgs.openaiApiKey = args[++i];
+          break;
+        case '--openai-base-url':
+          cliArgs.openaiBaseUrl = args[++i];
+          break;
+        case '--qwen-oauth-file':
+          cliArgs.qwenOauthFile = args[++i];
+          break;
+        case '--model':
+          cliArgs.model = args[++i];
+          break;
+        case '--model-mapping':
+          cliArgs.modelMapping = args[++i];
+          break;
+      }
+    }
+    
+    return cliArgs;
+  }
+
+  /**
+   * Detect configuration mode based on provided parameters
+   */
+  private detectConfigMode(): ConfigMode {
+    const hasOpenAIKey = !!process.env.OPENAI_API_KEY || !!this.cliArgs.openaiApiKey;
+    const hasOpenAIBaseUrl = !!process.env.OPENAI_BASE_URL || !!this.cliArgs.openaiBaseUrl;
+    
+    return (hasOpenAIKey || hasOpenAIBaseUrl) ? 
+      ConfigMode.UNIVERSAL_OPENAI : 
+      ConfigMode.QWEN_CLI;
+  }
+
+  /**
+   * Resolve and normalize base URL
+   */
+  private resolveBaseUrl(url: string): string {
+    let normalizedUrl = url.trim();
+    
+    // 移除末尾的斜杠
+    normalizedUrl = normalizedUrl.replace(/\/+$/, '');
+    
+    // 如果没有 /v1 后缀，则添加
+    if (!normalizedUrl.endsWith('/v1')) {
+      normalizedUrl += '/v1';
+    }
+    
+    // 确保有协议头
+    if (!normalizedUrl.startsWith('http://') && !normalizedUrl.startsWith('https://')) {
+      normalizedUrl = 'https://' + normalizedUrl;
+    }
+    
+    return normalizedUrl;
+  }
+  /**
+   * Load configuration from environment variables and CLI arguments
    */
   private loadConfig(): AppConfig {
     const server: ServerConfig = {
@@ -48,12 +120,34 @@ export class ConfigManager {
       corsCredentials: process.env.CORS_CREDENTIALS === 'true'
     };
 
-    const openai: OpenAIConfig = {
-      apiKey: process.env.OPENAI_API_KEY || '',
-      baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-      timeout: parseInt(process.env.OPENAI_TIMEOUT || '30000', 10),
-      maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3', 10)
-    };
+    // 根据配置模式决定OpenAI配置
+    let openaiConfig: OpenAIConfig;
+    
+    if (this.configMode === ConfigMode.UNIVERSAL_OPENAI) {
+      // 通用OpenAI模式
+      const apiKey = this.cliArgs.openaiApiKey || process.env.OPENAI_API_KEY || '';
+      const baseUrl = this.cliArgs.openaiBaseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+      
+      openaiConfig = {
+        apiKey,
+        baseUrl: this.resolveBaseUrl(baseUrl),
+        timeout: parseInt(process.env.OPENAI_TIMEOUT || '30000', 10),
+        maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3', 10),
+        configMode: ConfigMode.UNIVERSAL_OPENAI,
+        defaultModel: this.cliArgs.model
+      };
+    } else {
+      // qwen-cli模式
+      openaiConfig = {
+        apiKey: process.env.OPENAI_API_KEY || '',
+        baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+        timeout: parseInt(process.env.OPENAI_TIMEOUT || '30000', 10),
+        maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3', 10),
+        configMode: ConfigMode.QWEN_CLI,
+        oauthFilePath: this.cliArgs.qwenOauthFile,
+        defaultModel: this.cliArgs.model || 'qwen3-coder-plus'
+      };
+    }
 
     const rateLimit: RateLimitConfig = {
       windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10), // 15 minutes
@@ -77,7 +171,7 @@ export class ConfigManager {
 
     return {
       server,
-      openai,
+      openai: openaiConfig,
       rateLimit,
       logging,
       features,
@@ -105,25 +199,109 @@ export class ConfigManager {
   }
 
   /**
-   * Load model mapping from configuration file
+   * Load model mapping from configuration file or CLI parameter
    */
   async loadModelMapping(): Promise<void> {
     try {
-      const mappingFile = process.env.DEFAULT_MODEL_MAPPING_FILE || 
-        path.join(process.cwd(), 'config', 'model-mapping.json');
+      let mappingData: string;
       
-      const mappingData = await fs.readFile(mappingFile, 'utf-8');
-      this.modelMapping = JSON.parse(mappingData);
+      if (this.cliArgs.modelMapping) {
+        // 从命令行参数加载
+        if (this.cliArgs.modelMapping.startsWith('{')) {
+          // JSON数据
+          mappingData = this.cliArgs.modelMapping;
+        } else {
+          // 文件路径
+          mappingData = await fs.readFile(this.cliArgs.modelMapping, 'utf-8');
+        }
+      } else {
+        // 从默认文件加载
+        const mappingFile = process.env.DEFAULT_MODEL_MAPPING_FILE || 
+          path.join(process.cwd(), 'config', 'model-mapping.json');
+        mappingData = await fs.readFile(mappingFile, 'utf-8');
+      }
+      
+      const rawMapping = JSON.parse(mappingData);
+      this.modelMapping = this.convertToEnhancedMapping(rawMapping);
     } catch (error) {
       console.warn('Failed to load model mapping, using defaults:', error);
-      this.modelMapping = this.getDefaultModelMapping();
+      this.modelMapping = this.getDefaultEnhancedMapping();
     }
   }
 
   /**
-   * Get default model mapping if file loading fails
+   * Convert legacy or new mapping format to enhanced format
    */
-  private getDefaultModelMapping(): ModelMapping {
+  private convertToEnhancedMapping(rawMapping: any): EnhancedModelMapping {
+    // 如果已经是新格式（有mappings字段）
+    if (rawMapping.mappings && Array.isArray(rawMapping.mappings)) {
+      return {
+        mappings: rawMapping.mappings,
+        defaultModel: rawMapping.defaultModel
+      };
+    }
+    
+    // 转换旧格式为新格式
+    const mappings: ModelMappingRule[] = [];
+    
+    for (const [key, value] of Object.entries(rawMapping)) {
+      if (typeof value === 'object' && value !== null && key !== 'defaultModel') {
+        const target = (value as any).openaiModel || (value as any).targetModel;
+        if (target) {
+          mappings.push({
+            pattern: key,
+            target: target,
+            type: 'exact' // 旧格式默认为精确匹配
+          });
+        }
+      }
+    }
+    
+    return {
+      mappings,
+      defaultModel: rawMapping.defaultModel
+    };
+  }
+
+  /**
+   * Get default enhanced model mapping
+   */
+  private getDefaultEnhancedMapping(): EnhancedModelMapping {
+    return {
+      mappings: [
+        {
+          pattern: 'claude-3-opus-20240229',
+          target: 'gpt-4-turbo-preview',
+          type: 'exact'
+        },
+        {
+          pattern: 'claude-opus-4-20250514',
+          target: 'gpt-4-turbo-preview',
+          type: 'exact'
+        },
+        {
+          pattern: 'claude-3-sonnet-20240229',
+          target: 'gpt-4',
+          type: 'exact'
+        },
+        {
+          pattern: 'claude-3-haiku-20240307',
+          target: 'gpt-3.5-turbo',
+          type: 'exact'
+        },
+        {
+          pattern: 'claude-instant-1.2',
+          target: 'gpt-3.5-turbo',
+          type: 'exact'
+        }
+      ]
+    };
+  }
+
+  /**
+   * Get default legacy model mapping (for backward compatibility)
+   */
+  private getDefaultLegacyMapping(): LegacyModelMapping {
     return {
       'claude-3-opus-20240229': {
         openaiModel: 'gpt-4-turbo-preview',
@@ -203,91 +381,79 @@ export class ConfigManager {
   /**
    * Get model mapping
    */
-  getModelMapping(): ModelMapping {
+  getModelMapping(): EnhancedModelMapping {
     return this.modelMapping;
   }
 
   /**
-   * Get mapping for specific model
+   * Get effective model based on mapping rules
    */
-  getModelMappingFor(anthropicModel: string): ModelMapping[string] | undefined {
-    return this.modelMapping[anthropicModel];
+  getEffectiveModel(requestedModel: string): string {
+    // 1. 遍历映射规则，按顺序匹配
+    for (const rule of this.modelMapping.mappings) {
+      if (this.isModelMatch(requestedModel, rule.pattern, rule.type)) {
+        return rule.target;
+      }
+    }
+    
+    // 2. 使用 model-mapping 中的 defaultModel（优先级高于 --model 参数）
+    if (this.modelMapping.defaultModel) {
+      return this.modelMapping.defaultModel;
+    }
+    
+    // 3. 使用 --model 参数（等价于 defaultModel，但优先级较低）
+    if (this.config.openai.defaultModel) {
+      return this.config.openai.defaultModel;
+    }
+    
+    // 4. 返回原始模型（qwen-cli 模式下会使用自带默认模型 qwen3-coder-plus）
+    return requestedModel;
+  }
+  
+  /**
+   * Check if model matches pattern
+   */
+  private isModelMatch(model: string, pattern: string, type: string): boolean {
+    switch (type) {
+      case 'exact': 
+        return model === pattern;
+      case 'prefix': 
+        return model.startsWith(pattern);
+      case 'suffix': 
+        return model.endsWith(pattern);
+      case 'contains':
+      default: 
+        return model.includes(pattern);
+    }
   }
 
   /**
-   * Check if model is supported
+   * Get CLI model parameter
    */
-  isModelSupported(anthropicModel: string): boolean {
-    return anthropicModel in this.modelMapping;
+  getCliModel(): string | undefined {
+    return this.cliArgs.model;
   }
-
+  
   /**
-   * Get list of supported models
+   * Get effective default model
    */
-  getSupportedModels(): string[] {
-    return Object.keys(this.modelMapping);
+  getEffectiveDefaultModel(): string | undefined {
+    // model-mapping 中的 defaultModel 优先级高于 --model 参数
+    return this.modelMapping.defaultModel || this.cliArgs.model;
   }
-
+  
   /**
-   * Validate configuration
+   * Get configuration mode
    */
-  validateConfig(): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    // Validate OpenAI API key
-    if (!this.config.openai.apiKey) {
-      errors.push('OPENAI_API_KEY is required');
-    }
-
-    // Validate port
-    if (this.config.server.port < 1 || this.config.server.port > 65535) {
-      errors.push('PORT must be between 1 and 65535');
-    }
-
-    // Validate timeout values
-    if (this.config.openai.timeout < 1000) {
-      errors.push('OPENAI_TIMEOUT must be at least 1000ms');
-    }
-
-    if (this.config.requestTimeout < 1000) {
-      errors.push('REQUEST_TIMEOUT must be at least 1000ms');
-    }
-
-    // Validate rate limiting
-    if (this.config.rateLimit.windowMs < 1000) {
-      errors.push('RATE_LIMIT_WINDOW_MS must be at least 1000ms');
-    }
-
-    if (this.config.rateLimit.maxRequests < 1) {
-      errors.push('RATE_LIMIT_MAX_REQUESTS must be at least 1');
-    }
-
-    return {
-      valid: errors.length === 0,
-      errors
-    };
+  getConfigMode(): ConfigMode {
+    return this.configMode;
   }
-
+  
   /**
-   * Get environment info
+   * Get CLI arguments
    */
-  getEnvironmentInfo(): { [key: string]: any } {
-    return {
-      nodeVersion: process.version,
-      platform: process.platform,
-      arch: process.arch,
-      nodeEnv: this.config.server.nodeEnv,
-      debugMode: this.config.debugMode,
-      uptime: process.uptime(),
-      memoryUsage: process.memoryUsage()
-    };
-  }
-
-  /**
-   * Update model mapping at runtime
-   */
-  updateModelMapping(newMapping: Partial<ModelMapping>): void {
-    Object.assign(this.modelMapping, newMapping);
+  getCliArguments(): CLIArguments {
+    return { ...this.cliArgs };
   }
 
   /**
@@ -295,7 +461,7 @@ export class ConfigManager {
    */
   resetToDefaults(): void {
     this.config = this.loadConfig();
-    this.modelMapping = this.getDefaultModelMapping();
+    this.modelMapping = this.getDefaultEnhancedMapping();
   }
 }
 
