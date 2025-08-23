@@ -85,14 +85,37 @@ export function generateRequestId(): string {
 }
 
 // 记录请求开始
-export function logRequestStart(requestId: string, method: string, url: string, originalModel?: string) {
-  logger.info('Request started', {
+export function logRequestStart(
+  requestId: string, 
+  method: string, 
+  url: string, 
+  originalModel?: string,
+  requestBody?: any
+) {
+  const logData: any = {
     requestId,
     method,
     url,
     originalModel,
     timestamp: new Date().toISOString()
-  });
+  };
+  
+  // 如果启用了详细消息日志，添加请求体
+  if (requestBody) {
+    const config = require('../config').configManager.getConfig();
+    if (config.logging.verboseMessages) {
+      logData.requestBody = {
+        model: requestBody.model,
+        messages: requestBody.messages,
+        maxTokens: requestBody.max_tokens,
+        temperature: requestBody.temperature,
+        stream: requestBody.stream,
+        tools: requestBody.tools ? `[${requestBody.tools.length} tools]` : undefined
+      };
+    }
+  }
+  
+  logger.info('Request started', logData);
 }
 
 // 记录请求结束
@@ -103,6 +126,75 @@ export function logRequestEnd(requestId: string, statusCode: number, duration: n
     duration,
     inputTokens: tokens?.input || 0,
     outputTokens: tokens?.output || 0,
+    timestamp: new Date().toISOString()
+  });
+}
+
+/**
+ * 记录转换后的OpenAI请求
+ */
+export function logConvertedRequest(requestId: string, convertedRequest: any) {
+  const config = require('../config').configManager.getConfig();
+  if (!config.logging.verboseMessages) return;
+  
+  logger.info('Converted request (Anthropic -> OpenAI)', {
+    requestId,
+    convertedRequest: {
+      model: convertedRequest.model,
+      messages: convertedRequest.messages,
+      maxTokens: convertedRequest.max_tokens,
+      temperature: convertedRequest.temperature,
+      stream: convertedRequest.stream,
+      tools: convertedRequest.tools ? `[${convertedRequest.tools.length} tools]` : undefined
+    },
+    timestamp: new Date().toISOString()
+  });
+}
+
+/**
+ * 记录原始响应（来自OpenAI API）
+ */
+export function logOriginalResponse(requestId: string, originalResponse: any) {
+  const config = require('../config').configManager.getConfig();
+  if (!config.logging.verboseMessages) return;
+  
+  logger.info('Original response (from OpenAI API)', {
+    requestId,
+    originalResponse: {
+      id: originalResponse.id,
+      model: originalResponse.model,
+      object: originalResponse.object,
+      created: originalResponse.created,
+      choices: originalResponse.choices?.map((choice: any) => ({
+        index: choice.index,
+        message: choice.message,
+        finishReason: choice.finish_reason
+      })),
+      usage: originalResponse.usage
+    },
+    timestamp: new Date().toISOString()
+  });
+}
+
+/**
+ * 记录转换后的Anthropic响应
+ */
+export function logConvertedResponse(requestId: string, convertedResponse: any) {
+  const config = require('../config').configManager.getConfig();
+  if (!config.logging.verboseMessages) return;
+  
+  logger.info('Converted response (OpenAI -> Anthropic)', {
+    requestId,
+    convertedResponse: {
+      id: convertedResponse.id,
+      type: convertedResponse.type,
+      role: convertedResponse.role,
+      model: convertedResponse.model,
+      content: convertedResponse.content,
+      stopReason: convertedResponse.stop_reason,
+      stopSequence: convertedResponse.stop_sequence,
+      usage: convertedResponse.usage
+    },
     timestamp: new Date().toISOString()
   });
 }

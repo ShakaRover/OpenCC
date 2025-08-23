@@ -18,6 +18,7 @@ export interface CLIArguments {
   qwenOauthFile?: string;
   model?: string;
   modelMapping?: string;
+  verboseMessages?: boolean;
 }
 
 // 新的简化模型映射规则
@@ -76,6 +77,7 @@ export interface LoggingConfig {
   level: 'error' | 'warn' | 'info' | 'debug';
   format: 'json' | 'simple';
   verboseLogging: boolean;
+  verboseMessages: boolean;
 }
 
 export interface FeatureFlags {

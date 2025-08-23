@@ -79,7 +79,8 @@ export class ConfigManager {
           break;
         case '--openai-base-url':
           if (i + 1 < args.length && args[i + 1]) {
-            cliArgs.openaiBaseUrl = this.cleanQuotes(args[++i]!);
+            const rawUrl = this.cleanQuotes(args[++i]!);
+            cliArgs.openaiBaseUrl = this.normalizeBaseUrl(rawUrl);
           }
           break;
         case '--qwen-oauth-file':
@@ -96,6 +97,9 @@ export class ConfigManager {
           if (i + 1 < args.length && args[i + 1]) {
             cliArgs.modelMapping = this.cleanQuotes(args[++i]!);
           }
+          break;
+        case '--verbose-messages':
+          cliArgs.verboseMessages = true;
           break;
       }
     }
@@ -117,7 +121,7 @@ export class ConfigManager {
         cliArgs.openaiApiKey = value;
         break;
       case '--openai-base-url':
-        cliArgs.openaiBaseUrl = value;
+        cliArgs.openaiBaseUrl = this.normalizeBaseUrl(value);
         break;
       case '--qwen-oauth-file':
         cliArgs.qwenOauthFile = value;
@@ -127,6 +131,9 @@ export class ConfigManager {
         break;
       case '--model-mapping':
         cliArgs.modelMapping = value;
+        break;
+      case '--verbose-messages':
+        cliArgs.verboseMessages = value === 'true' || value === '';
         break;
     }
   }
@@ -213,17 +220,18 @@ export class ConfigManager {
   }
 
   /**
-   * Resolve and normalize base URL
+   * Normalize base URL at parameter input stage
+   * Intelligently handles URLs that may contain /v1 suffix or trailing slashes
    */
-  private resolveBaseUrl(url: string): string {
+  private normalizeBaseUrl(url: string): string {
     let normalizedUrl = url.trim();
     
     // 移除末尾的斜杠
     normalizedUrl = normalizedUrl.replace(/\/+$/, '');
     
-    // 如果没有 /v1 后缀，则添加
-    if (!normalizedUrl.endsWith('/v1')) {
-      normalizedUrl += '/v1';
+    // 如果URL以/v1结尾，移除它（因为/v1应该在endpoint path中）
+    if (normalizedUrl.endsWith('/v1')) {
+      normalizedUrl = normalizedUrl.slice(0, -3); // 移除 '/v1'
     }
     
     // 确保有协议头
@@ -251,11 +259,13 @@ export class ConfigManager {
     if (this.configMode === ConfigMode.UNIVERSAL_OPENAI) {
       // 通用OpenAI模式
       const apiKey = this.cliArgs.openaiApiKey || process.env.OPENAI_API_KEY || '';
-      const baseUrl = this.cliArgs.openaiBaseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+      // CLI参数已经标准化，只需要处理环境变量
+      const envBaseUrl = process.env.OPENAI_BASE_URL ? this.normalizeBaseUrl(process.env.OPENAI_BASE_URL) : 'https://api.openai.com';
+      const baseUrl = this.cliArgs.openaiBaseUrl || envBaseUrl;
       
       openaiConfig = {
         apiKey,
-        baseUrl: this.resolveBaseUrl(baseUrl),
+        baseUrl,
         timeout: parseInt(process.env.OPENAI_TIMEOUT || '30000', 10),
         maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3', 10),
         configMode: ConfigMode.UNIVERSAL_OPENAI,
@@ -263,9 +273,11 @@ export class ConfigManager {
       };
     } else {
       // qwen-cli模式
+      const envBaseUrl = process.env.OPENAI_BASE_URL ? this.normalizeBaseUrl(process.env.OPENAI_BASE_URL) : 'https://api.openai.com';
+      
       openaiConfig = {
         apiKey: process.env.OPENAI_API_KEY || '',
-        baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+        baseUrl: envBaseUrl,
         timeout: parseInt(process.env.OPENAI_TIMEOUT || '30000', 10),
         maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3', 10),
         configMode: ConfigMode.QWEN_CLI,
@@ -284,7 +296,8 @@ export class ConfigManager {
     const logging: LoggingConfig = {
       level: (process.env.LOG_LEVEL as any) || 'info',
       format: (process.env.LOG_FORMAT as any) || 'json',
-      verboseLogging: process.env.VERBOSE_LOGGING === 'true'
+      verboseLogging: process.env.VERBOSE_LOGGING === 'true',
+      verboseMessages: this.cliArgs.verboseMessages || process.env.VERBOSE_MESSAGES === 'true'
     };
 
     const features: FeatureFlags = {
