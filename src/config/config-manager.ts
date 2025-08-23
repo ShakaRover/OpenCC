@@ -46,45 +46,170 @@ export class ConfigManager {
   }
 
   /**
-   * Parse command line arguments
+   * Parse command line arguments with enhanced validation
    */
   private parseCliArguments(): CLIArguments {
     const args = process.argv.slice(2);
     const cliArgs: CLIArguments = {};
     
+    console.log('Parsing CLI arguments:', args); // 调试信息
+    
     for (let i = 0; i < args.length; i++) {
-      switch (args[i]) {
+      const arg = args[i];
+      
+      if (!arg) continue; // 跳过空参数
+      
+      // 处理等号形式的参数 (e.g., --openai-api-key=value)
+      if (arg.includes('=')) {
+        const [key, ...valueParts] = arg.split('=');
+        const value = valueParts.join('='); // 重新组合值部分
+        
+        if (key) {
+          this.setCliArgument(cliArgs, key, this.cleanQuotes(value || ''));
+        }
+        continue;
+      }
+      
+      // 处理空格分隔的参数 (e.g., --openai-api-key value)
+      switch (arg) {
         case '--openai-api-key':
-          cliArgs.openaiApiKey = args[++i];
+          if (i + 1 < args.length && args[i + 1]) {
+            cliArgs.openaiApiKey = this.cleanQuotes(args[++i]!);
+          }
           break;
         case '--openai-base-url':
-          cliArgs.openaiBaseUrl = args[++i];
+          if (i + 1 < args.length && args[i + 1]) {
+            cliArgs.openaiBaseUrl = this.cleanQuotes(args[++i]!);
+          }
           break;
         case '--qwen-oauth-file':
-          cliArgs.qwenOauthFile = args[++i];
+          if (i + 1 < args.length && args[i + 1]) {
+            cliArgs.qwenOauthFile = this.cleanQuotes(args[++i]!);
+          }
           break;
         case '--model':
-          cliArgs.model = args[++i];
+          if (i + 1 < args.length && args[i + 1]) {
+            cliArgs.model = this.cleanQuotes(args[++i]!);
+          }
           break;
         case '--model-mapping':
-          cliArgs.modelMapping = args[++i];
+          if (i + 1 < args.length && args[i + 1]) {
+            cliArgs.modelMapping = this.cleanQuotes(args[++i]!);
+          }
           break;
       }
     }
+    
+    // 验证解析结果
+    const validationResult = this.validateCliArguments(cliArgs);
+    console.log('CLI arguments parsed:', cliArgs);
+    console.log('Validation result:', validationResult);
     
     return cliArgs;
   }
 
   /**
-   * Detect configuration mode based on provided parameters
+   * Set CLI argument by key, supporting both forms
+   */
+  private setCliArgument(cliArgs: CLIArguments, key: string, value: string): void {
+    switch (key) {
+      case '--openai-api-key':
+        cliArgs.openaiApiKey = value;
+        break;
+      case '--openai-base-url':
+        cliArgs.openaiBaseUrl = value;
+        break;
+      case '--qwen-oauth-file':
+        cliArgs.qwenOauthFile = value;
+        break;
+      case '--model':
+        cliArgs.model = value;
+        break;
+      case '--model-mapping':
+        cliArgs.modelMapping = value;
+        break;
+    }
+  }
+
+  /**
+   * Clean quotes from parameter values
+   */
+  private cleanQuotes(value: string): string {
+    if (!value) return value;
+    
+    let cleaned = value.trim();
+    
+    // 移除首尾的引号（单引号或双引号）
+    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+        (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+      cleaned = cleaned.slice(1, -1);
+    }
+    
+    // 处理不完整的引号（只有开始引号，没有结束引号）
+    if (cleaned.startsWith('"') || cleaned.startsWith("'")) {
+      cleaned = cleaned.slice(1);
+    }
+    
+    return cleaned;
+  }
+
+  /**
+   * Validate CLI arguments
+   */
+  private validateCliArguments(cliArgs: CLIArguments): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    
+    // 验证API密钥格式
+    if (cliArgs.openaiApiKey && !cliArgs.openaiApiKey.startsWith('sk-') && 
+        !cliArgs.openaiApiKey.startsWith('ms-')) {
+      errors.push('Invalid API key format');
+    }
+    
+    // 验证URL格式
+    if (cliArgs.openaiBaseUrl) {
+      try {
+        new URL(cliArgs.openaiBaseUrl);
+      } catch (e) {
+        errors.push('Invalid base URL format');
+      }
+    }
+    
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Detect configuration mode based on provided parameters with enhanced debugging
    */
   private detectConfigMode(): ConfigMode {
-    const hasOpenAIKey = !!process.env.OPENAI_API_KEY || !!this.cliArgs.openaiApiKey;
-    const hasOpenAIBaseUrl = !!process.env.OPENAI_BASE_URL || !!this.cliArgs.openaiBaseUrl;
+    const debugInfo = {
+      hasEnvKey: !!process.env.OPENAI_API_KEY,
+      hasEnvBaseUrl: !!process.env.OPENAI_BASE_URL,
+      hasCliKey: !!this.cliArgs.openaiApiKey,
+      hasCliBaseUrl: !!this.cliArgs.openaiBaseUrl,
+      cliArgsCount: Object.keys(this.cliArgs).length,
+      envApiKey: process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.substring(0, 10) + '...' : 'none',
+      envBaseUrl: process.env.OPENAI_BASE_URL || 'none',
+      cliApiKey: this.cliArgs.openaiApiKey ? this.cliArgs.openaiApiKey.substring(0, 10) + '...' : 'none',
+      cliBaseUrl: this.cliArgs.openaiBaseUrl || 'none',
+      processArgv: process.argv
+    };
     
-    return (hasOpenAIKey || hasOpenAIBaseUrl) ? 
+    const hasOpenAIKey = debugInfo.hasEnvKey || debugInfo.hasCliKey;
+    const hasOpenAIBaseUrl = debugInfo.hasEnvBaseUrl || debugInfo.hasCliBaseUrl;
+    
+    const mode = (hasOpenAIKey || hasOpenAIBaseUrl) ? 
       ConfigMode.UNIVERSAL_OPENAI : 
       ConfigMode.QWEN_CLI;
+      
+    console.log('Configuration mode detection:', {
+      mode,
+      ...debugInfo
+    });
+    
+    return mode;
   }
 
   /**

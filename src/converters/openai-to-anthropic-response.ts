@@ -1,6 +1,7 @@
 import { logger } from '../utils/helpers.js';
 import { OpenAIResponse, OpenAIChoice, OpenAIToolCall, OpenAIMessage } from '../types/openai.js';
 import { AnthropicResponse, AnthropicContent, AnthropicUsage, AnthropicToolUseContent, AnthropicTextContent, AnthropicStopReason } from '../types/anthropic.js';
+import JSON5 from 'json5';
 
 export class OpenAIToAnthropicResponseConverter {
   
@@ -135,174 +136,65 @@ export class OpenAIToAnthropicResponseConverter {
   }
 
   /**
-   * 解析工具调用参数，支持容错处理
+   * 解析工具调用参数，使用简化的两级解析策略
+   * 标准JSON解析 → JSON5解析 → 彻底失败
    */
   private parseToolArguments(argumentsStr: string, requestId: string, toolCallId: string): any {
     if (!argumentsStr || argumentsStr.trim() === '') {
       return {};
     }
 
+    const parseContext = {
+      requestId,
+      toolCallId,
+      originalString: argumentsStr
+    };
+
     try {
       // 首先尝试标准JSON解析
-      return JSON.parse(argumentsStr);
-    } catch (error) {
-      logger.warn('Standard JSON parse failed, attempting alternative parsing', {
+      const result = JSON.parse(argumentsStr);
+      
+      logger.info('Successfully parsed arguments with standard JSON', {
         requestId,
         toolCallId,
-        arguments: argumentsStr.substring(0, 200)
+        originalLength: argumentsStr.length,
+        method: 'json-standard'
+      });
+      
+      return result;
+    } catch (error) {
+      logger.warn('Standard JSON parse failed, attempting JSON5', {
+        requestId,
+        toolCallId,
+        arguments: argumentsStr.substring(0, 200),
+        error: error instanceof Error ? error.message : String(error)
       });
 
       try {
-        // 尝试智能修复JSON格式
-        const fixedJson = this.smartFixJsonQuotes(argumentsStr);
+        // 尝试JSON5解析（支持单引号、无引号属性名等）
+        const result = JSON5.parse(argumentsStr);
         
-        const result = JSON.parse(fixedJson);
-        
-        logger.info('Successfully parsed arguments with smart quote fixing', {
+        logger.info('Successfully parsed arguments with JSON5', {
           requestId,
           toolCallId,
           originalLength: argumentsStr.length,
-          fixedLength: fixedJson.length,
-          changesMade: argumentsStr !== fixedJson
+          method: 'json5'
         });
         
         return result;
       } catch (secondError) {
-        logger.warn('Smart quote fixing failed, attempting safe eval parsing', {
+        logger.error('All parsing attempts failed', {
           requestId,
           toolCallId,
-          error: secondError instanceof Error ? secondError.message : String(secondError)
+          originalString: argumentsStr.substring(0, 200),
+          jsonError: error instanceof Error ? error.message : String(error),
+          json5Error: secondError instanceof Error ? secondError.message : String(secondError)
         });
 
-        try {
-          // 最后尝试使用Function构造器进行安全解析
-          // 仅用于简单对象，有一定安全限制
-          const safeEval = new Function('return ' + argumentsStr);
-          const result = safeEval();
-          
-          logger.info('Successfully parsed arguments with safe eval', {
-            requestId,
-            toolCallId
-          });
-          
-          return result;
-        } catch (evalError) {
-          logger.error('All parsing methods failed', {
-            requestId,
-            toolCallId,
-            originalError: error instanceof Error ? error.message : String(error),
-            evalError: evalError instanceof Error ? evalError.message : String(evalError),
-            arguments: argumentsStr
-          });
-          
-          // 如果所有方法都失败，抛出原始错误
-          throw error;
-        }
+        // 彻底失败，直接抛出错误
+        throw new Error(`Failed to parse tool arguments: ${secondError instanceof Error ? secondError.message : String(secondError)}`);
       }
     }
-  }
-
-  /**
-   * 智能修复JSON格式中的引号问题
-   */
-  private smartFixJsonQuotes(jsonStr: string): string {
-    let result = jsonStr.trim();
-    
-    // 1. 修复属性名的引号问题
-    // 匹配模式：{ 或 , 后面跟着可能的空格，然后是未加引号的属性名
-    result = result.replace(
-      /([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g, 
-      '$1"$2":'
-    );
-    
-    // 2. 智能处理值的单引号问题
-    // 这是更复杂的部分，需要区分字符串值和对象键
-    result = this.fixValueQuotes(result);
-    
-    return result;
-  }
-
-  /**
-   * 修复JSON值中的引号问题（更精确的处理）
-   */
-  private fixValueQuotes(jsonStr: string): string {
-    let result = '';
-    let i = 0;
-    let inString = false;
-    let stringChar = '';
-    let escapeNext = false;
-    
-    while (i < jsonStr.length) {
-      const char = jsonStr[i];
-      const nextChar = jsonStr[i + 1];
-      
-      if (escapeNext) {
-        result += char;
-        escapeNext = false;
-        i++;
-        continue;
-      }
-      
-      if (char === '\\') {
-        result += char;
-        escapeNext = true;
-        i++;
-        continue;
-      }
-      
-      if (!inString) {
-        // 不在字符串内部
-        if (char === "'" && this.isStartOfStringValue(jsonStr, i)) {
-          // 这是字符串值的开始，将单引号转为双引号
-          result += '"';
-          inString = true;
-          stringChar = "'";
-        } else if (char === '"') {
-          result += char;
-          inString = true;
-          stringChar = '"';
-        } else {
-          result += char;
-        }
-      } else {
-        // 在字符串内部
-        if (char === stringChar && !escapeNext) {
-          // 字符串结束
-          if (stringChar === "'") {
-            result += '"';  // 将结束的单引号转为双引号
-          } else {
-            result += char;
-          }
-          inString = false;
-          stringChar = '';
-        } else if (char === '"' && stringChar === "'") {
-          // 在单引号字符串内遇到双引号，需要转义
-          result += '\\"';
-        } else {
-          result += char;
-        }
-      }
-      
-      i++;
-    }
-    
-    return result;
-  }
-  
-  /**
-   * 判断当前位置的单引号是否是字符串值的开始
-   */
-  private isStartOfStringValue(jsonStr: string, position: number): boolean {
-    // 向前查找最近的非空白字符
-    for (let i = position - 1; i >= 0; i--) {
-      const char = jsonStr[i];
-      if (char === ' ' || char === '\t' || char === '\n' || char === '\r') {
-        continue;
-      }
-      // 如果前面是冒号或方括号开始，则这是值的开始
-      return char === ':' || char === '[' || char === ',';
-    }
-    return false;
   }
 
   /**
