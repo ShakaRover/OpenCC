@@ -29,6 +29,16 @@ router.post('/', async (req: Request, res: Response) => {
   const startTime = Date.now();
   
   try {
+    // 检查 beta 查询参数
+    const isBeta = req.query.beta === 'true';
+    if (isBeta) {
+      logger.debug('Beta feature requested', {
+        requestId,
+        query: req.query,
+        userAgent: req.get('User-Agent')
+      });
+    }
+    
     // 记录请求开始（原始 Anthropic 请求）
     logRequestStart(requestId, 'POST', '/v1/messages', req.body.model, req.body);
     

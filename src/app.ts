@@ -18,6 +18,9 @@ app.use((req, res, next) => {
   logger.info('Incoming request', {
     method: req.method,
     url: req.url,
+    originalUrl: req.originalUrl,
+    path: req.path,
+    query: req.query,
     userAgent: req.get('User-Agent'),
     ip: req.ip,
     contentType: req.get('Content-Type')
