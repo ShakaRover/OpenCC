@@ -1,6 +1,7 @@
 import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
+import { configManager } from '../config/index.js';
 
 // 配置Winston日志系统 - 双重输出（控制台+文件）
 const loggerConfig = {
@@ -102,7 +103,7 @@ export function logRequestStart(
   
   // 如果启用了详细消息日志，添加请求体
   if (requestBody) {
-    const config = require('../config').configManager.getConfig();
+    const config = configManager.getConfig();
     if (config.logging.verboseMessages) {
       logData.requestBody = {
         model: requestBody.model,
@@ -134,7 +135,7 @@ export function logRequestEnd(requestId: string, statusCode: number, duration: n
  * 记录转换后的OpenAI请求
  */
 export function logConvertedRequest(requestId: string, convertedRequest: any) {
-  const config = require('../config').configManager.getConfig();
+  const config = configManager.getConfig();
   if (!config.logging.verboseMessages) return;
   
   logger.info('Converted request (Anthropic -> OpenAI)', {
@@ -155,7 +156,7 @@ export function logConvertedRequest(requestId: string, convertedRequest: any) {
  * 记录原始响应（来自OpenAI API）
  */
 export function logOriginalResponse(requestId: string, originalResponse: any) {
-  const config = require('../config').configManager.getConfig();
+  const config = configManager.getConfig();
   if (!config.logging.verboseMessages) return;
   
   logger.info('Original response (from OpenAI API)', {
@@ -180,7 +181,7 @@ export function logOriginalResponse(requestId: string, originalResponse: any) {
  * 记录转换后的Anthropic响应
  */
 export function logConvertedResponse(requestId: string, convertedResponse: any) {
-  const config = require('../config').configManager.getConfig();
+  const config = configManager.getConfig();
   if (!config.logging.verboseMessages) return;
   
   logger.info('Converted response (OpenAI -> Anthropic)', {

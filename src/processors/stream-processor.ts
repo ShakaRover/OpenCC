@@ -8,6 +8,7 @@ import { logger, logOriginalResponse, logConvertedResponse } from '../utils/help
 import { openaiToAnthropicResponseConverter } from '../converters/openai-to-anthropic-response.js';
 import type { APIProvider } from '../providers/index.js';
 import { ProtocolType } from '../providers/index.js';
+import { configManager } from '../config/index.js';
 
 /**
  * Stream processing context
@@ -468,7 +469,7 @@ export class StreamProcessor {
    */
   private logOriginalStreamChunk(requestId: string, chunkData: any): void {
     try {
-      const config = require('../config').configManager.getConfig();
+      const config = configManager.getConfig();
       if (!config.logging.verboseMessages) return;
       
       logger.info('Original stream chunk (from API provider)', {
@@ -497,7 +498,7 @@ export class StreamProcessor {
    */
   private logConvertedStreamChunk(requestId: string, chunks: string[]): void {
     try {
-      const config = require('../config').configManager.getConfig();
+      const config = configManager.getConfig();
       if (!config.logging.verboseMessages) return;
       
       logger.info('Converted stream chunks (to Anthropic format)', {
