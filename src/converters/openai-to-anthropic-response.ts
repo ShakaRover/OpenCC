@@ -24,7 +24,7 @@ export class OpenAIToAnthropicResponseConverter {
     logger.info('Converting OpenAI response to Anthropic format', {
       requestId,
       originalModel,
-      qwenModel: openaiResponse.model,
+      responseModel: openaiResponse.model,
       inputTokens: openaiResponse.usage?.prompt_tokens || 0,
       outputTokens: openaiResponse.usage?.completion_tokens || 0,
       finishReason: choice.finish_reason,
