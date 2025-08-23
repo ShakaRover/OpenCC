@@ -12,6 +12,9 @@ export default {
       }
     }]
   },
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1'
+  },
   testMatch: [
     '<rootDir>/tests/**/*.test.ts',
     '<rootDir>/src/**/*.test.ts'

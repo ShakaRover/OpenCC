@@ -15,31 +15,36 @@ export class AnthropicToOpenAIConverter {
    * 将Anthropic请求转换为OpenAI格式
    */
   convertRequest(anthropicRequest: AnthropicRequest, requestId: string): OpenAIRequest {
+    // 在转换前确保 tool_choice 自动设置
+    const processedRequest = this.ensureToolChoice(anthropicRequest, requestId);
+    
     // 根据配置获取有效的目标模型
-    const targetModel = this.getTargetModel(anthropicRequest.model);
+    const targetModel = this.getTargetModel(processedRequest.model);
     
     // 记录原始模型信息到日志
     logger.info('Converting Anthropic request to OpenAI format', {
       requestId,
-      originalModel: anthropicRequest.model,
+      originalModel: processedRequest.model,
       targetModel,
       configMode: configManager.getConfigMode(),
-      messageCount: anthropicRequest.messages?.length || 0,
-      maxTokens: anthropicRequest.max_tokens,
-      temperature: anthropicRequest.temperature,
-      stream: anthropicRequest.stream
+      messageCount: processedRequest.messages?.length || 0,
+      maxTokens: processedRequest.max_tokens,
+      temperature: processedRequest.temperature,
+      stream: processedRequest.stream,
+      hasTools: this.hasValidTools(processedRequest.tools),
+      toolChoiceSet: !!processedRequest.tool_choice
     });
 
     const openaiRequest: OpenAIRequest = {
       model: targetModel,
-      messages: this.convertMessages(anthropicRequest.messages, requestId),
-      max_tokens: anthropicRequest.max_tokens,
-      temperature: anthropicRequest.temperature,
-      stream: anthropicRequest.stream,
-      stop: anthropicRequest.stop_sequences,
-      top_p: anthropicRequest.top_p,
-      tools: this.convertTools(anthropicRequest.tools, requestId),
-      tool_choice: this.convertToolChoice(anthropicRequest.tool_choice, requestId)
+      messages: this.convertMessages(processedRequest.messages, requestId),
+      max_tokens: processedRequest.max_tokens,
+      temperature: processedRequest.temperature,
+      stream: processedRequest.stream,
+      stop: processedRequest.stop_sequences,
+      top_p: processedRequest.top_p,
+      tools: this.convertTools(processedRequest.tools, requestId),
+      tool_choice: this.convertToolChoice(processedRequest.tool_choice, requestId)
     };
 
     // 移除undefined值
@@ -51,7 +56,11 @@ export class AnthropicToOpenAIConverter {
 
     logger.debug('Request conversion completed', {
       requestId,
-      convertedMessageCount: openaiRequest.messages.length
+      convertedMessageCount: openaiRequest.messages.length,
+      hasTools: !!openaiRequest.tools,
+      toolsCount: openaiRequest.tools?.length || 0,
+      hasToolChoice: !!openaiRequest.tool_choice,
+      finalToolChoice: openaiRequest.tool_choice
     });
 
     return openaiRequest;
@@ -239,6 +248,104 @@ export class AnthropicToOpenAIConverter {
 
       return openaiTool;
     });
+  }
+
+  /**
+   * 确保 tool_choice 自动设置
+   * 当 tools 不为空且 tool_choice 未设置时，自动设置为 auto 模式
+   */
+  private ensureToolChoice(request: AnthropicRequest, requestId: string): AnthropicRequest {
+    // 检查是否需要自动设置 tool_choice
+    if (this.shouldAutoSetToolChoice(request)) {
+      const updatedRequest = {
+        ...request,
+        tool_choice: { type: 'auto' as const }
+      };
+      
+      this.logToolChoiceDecision('auto_set', requestId, {
+        toolsCount: request.tools?.length || 0,
+        originalToolChoice: request.tool_choice,
+        finalToolChoice: updatedRequest.tool_choice
+      });
+      
+      return updatedRequest;
+    } else if (request.tool_choice) {
+      this.logToolChoiceDecision('keep_user', requestId, {
+        toolsCount: request.tools?.length || 0,
+        originalToolChoice: request.tool_choice,
+        finalToolChoice: request.tool_choice
+      });
+    } else {
+      this.logToolChoiceDecision('skip_empty', requestId, {
+        toolsCount: request.tools?.length || 0,
+        reason: 'No tools provided or tools array is empty'
+      });
+    }
+    
+    return request;
+  }
+
+  /**
+   * 检查是否应该自动设置 tool_choice
+   */
+  private shouldAutoSetToolChoice(request: AnthropicRequest): boolean {
+    // 当 tools 存在且有效，但 tool_choice 未设置时，返回 true
+    return this.hasValidTools(request.tools) && !request.tool_choice;
+  }
+
+  /**
+   * 验证 tools 数组是否有效
+   */
+  private hasValidTools(tools: AnthropicTool[] | undefined): boolean {
+    if (!tools || !Array.isArray(tools) || tools.length === 0) {
+      return false;
+    }
+    
+    // 检查是否至少包含一个有效的工具定义
+    return tools.some(tool => 
+      tool && 
+      typeof tool.name === 'string' && 
+      tool.name.trim().length > 0 &&
+      typeof tool.description === 'string' &&
+      tool.input_schema && 
+      typeof tool.input_schema === 'object'
+    );
+  }
+
+  /**
+   * 记录 tool_choice 决策过程
+   */
+  private logToolChoiceDecision(
+    action: 'auto_set' | 'keep_user' | 'skip_empty' | 'validation_failed',
+    requestId: string,
+    details: {
+      toolsCount?: number;
+      originalToolChoice?: any;
+      finalToolChoice?: any;
+      reason?: string;
+    } = {}
+  ): void {
+    const logData = {
+      requestId,
+      action,
+      timestamp: new Date().toISOString(),
+      ...details
+    };
+    
+    switch (action) {
+      case 'auto_set':
+        logger.info('Auto-setting tool_choice to auto mode', logData);
+        break;
+      case 'keep_user':
+        logger.debug('Keeping user-specified tool_choice', logData);
+        break;
+      case 'skip_empty':
+        logger.debug('Skipping tool_choice auto-setting (no valid tools)', logData);
+        break;
+      case 'validation_failed':
+        logger.warn('Tool validation failed, skipping auto-setting', logData);
+        break;
+    }
   }
 
   /**
