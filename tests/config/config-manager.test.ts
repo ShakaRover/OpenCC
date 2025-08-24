@@ -2,8 +2,8 @@
  * ConfigManager Tests
  */
 
-import { ConfigManager } from '../../src/config/config-manager.js';
-import { ConfigMode } from '../../src/types/index.js';
+import { ConfigManager } from '@/config/config-manager.js';
+import { ConfigMode } from '@/types/index.js';
 
 describe('ConfigManager', () => {
   let configManager: ConfigManager;

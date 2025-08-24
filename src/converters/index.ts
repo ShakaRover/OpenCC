@@ -3,4 +3,4 @@
  */
 
 export { AnthropicToOpenAIConverter } from './anthropic-to-openai.js';
-export { OpenAIToAnthropicConverter } from './openai-to-anthropic.js';
+export { OpenAIToAnthropicResponseConverter } from './openai-to-anthropic.js';

@@ -13,8 +13,12 @@ export default {
     }]
   },
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1'
+    '^@/(.*)\.js$': '<rootDir>/src/$1',
+    '^@/(.*)$': '<rootDir>/src/$1',
+    '^(.*)\.js$': '$1'
   },
+  modulePaths: ['<rootDir>/src'],
+  moduleFileExtensions: ['js', 'ts', 'json'],
   testMatch: [
     '<rootDir>/tests/**/*.test.ts',
     '<rootDir>/src/**/*.test.ts'

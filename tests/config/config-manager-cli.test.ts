@@ -3,8 +3,8 @@
  * 针对CLI参数解析和配置模式检测的单元测试
  */
 
-import { ConfigManager } from '../../src/config/config-manager.js';
-import { ConfigMode } from '../../src/types/index.js';
+import { ConfigManager } from '@/config/config-manager.js';
+import { ConfigMode } from '@/types/index.js';
 
 describe('ConfigManager CLI Arguments Tests', () => {
   let originalArgv: string[];
@@ -69,7 +69,7 @@ describe('ConfigManager CLI Arguments Tests', () => {
       process.argv = [
         'node', 'test',
         '--openai-api-key', '\"ms-ef51e3fc-478f-41e9-8642-769a96da154f\"',
-        '--model', \"'deepseek-ai/DeepSeek-V3.1'\",
+        '--model', "'deepseek-ai/DeepSeek-V3.1'",
         '--openai-base-url', 'https://api-inference.modelscope.cn/v1'
       ];
       
@@ -84,7 +84,7 @@ describe('ConfigManager CLI Arguments Tests', () => {
     test('should handle incomplete quotes correctly', () => {
       process.argv = [
         'node', 'test',
-        '--model', \"'deepseek-ai/DeepSeek-V3.1\", // 不完整的引号
+        '--model', "'deepseek-ai/DeepSeek-V3.1", // 不完整的引号
         '--openai-api-key', 'ms-test-key'
       ];
       
@@ -305,7 +305,7 @@ describe('ConfigManager CLI Arguments Tests', () => {
         'node', 'test',
         '--openai-base-url=https://api-inference.modelscope.cn/v1',
         '--openai-api-key=ms-ef51e3fc-478f-41e9-8642-769a96da154f',
-        \"--model='deepseek-ai/DeepSeek-V3.1\" // 不完整的引号
+        "--model='deepseek-ai/DeepSeek-V3.1" // 不完整的引号
       ];
       
       const configManager = ConfigManager.getInstance();

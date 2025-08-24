@@ -18,8 +18,8 @@ import type {
   RateLimitConfig,
   LoggingConfig,
   FeatureFlags
-} from '../types/index.js';
-import { ConfigMode } from '../types/index.js';
+} from '@/types/index.js';
+import { ConfigMode } from '@/types/index.js';
 
 // Load environment variables
 config();
@@ -261,7 +261,8 @@ export class ConfigManager {
       const apiKey = this.cliArgs.openaiApiKey || process.env.OPENAI_API_KEY || '';
       // CLI参数已经标准化，只需要处理环境变量
       const envBaseUrl = process.env.OPENAI_BASE_URL ? this.normalizeBaseUrl(process.env.OPENAI_BASE_URL) : 'https://api.openai.com';
-      const baseUrl = this.cliArgs.openaiBaseUrl || envBaseUrl;
+      const normalizedBaseUrl = this.cliArgs.openaiBaseUrl || envBaseUrl;
+      const baseUrl = normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : normalizedBaseUrl + '/v1';
       
       openaiConfig = {
         apiKey,
@@ -274,6 +275,8 @@ export class ConfigManager {
     } else {
       // qwen-cli模式
       const envBaseUrl = process.env.OPENAI_BASE_URL ? this.normalizeBaseUrl(process.env.OPENAI_BASE_URL) : 'https://api.openai.com';
+      const normalizedBaseUrl = envBaseUrl;
+      const baseUrl = normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : normalizedBaseUrl + '/v1';
       
       openaiConfig = {
         apiKey: process.env.OPENAI_API_KEY || '',

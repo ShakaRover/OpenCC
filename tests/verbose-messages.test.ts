@@ -2,7 +2,7 @@
  * 测试 verbose-messages 详细日志功能
  */
 
-import { ConfigManager } from '../src/config/index.js';
+import { ConfigManager } from '@/config/index.js';
 
 describe('Verbose Messages Configuration', () => {
   let originalArgv: string[];

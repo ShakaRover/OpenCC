@@ -22,6 +22,7 @@ export interface OpenAIMessage {
   name?: string;
   tool_calls?: OpenAIToolCall[];
   tool_call_id?: string;
+  reasoning_content?: string; // DeepSeek reasoning content extension
 }
 
 export interface OpenAIFunctionParameters {
@@ -84,6 +85,7 @@ export interface OpenAIChoice {
     role: 'assistant';
     content: string | null;
     tool_calls?: OpenAIToolCall[];
+    reasoning_content?: string; // DeepSeek reasoning content extension
   };
   finish_reason: OpenAIFinishReason;
   logprobs?: any;
@@ -104,6 +106,7 @@ export interface OpenAIStreamChoice {
   delta: {
     role?: 'assistant';
     content?: string;
+    reasoning_content?: string; // DeepSeek reasoning content extension
     tool_calls?: Array<{
       index?: number;
       id?: string;

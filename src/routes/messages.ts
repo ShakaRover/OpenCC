@@ -2,7 +2,7 @@ import express, { Request, Response } from 'express';
 import { logger, generateRequestId, logRequestStart, logRequestEnd, logConvertedRequest, logOriginalResponse, logConvertedResponse } from '../utils/helpers.js';
 import { providerMiddleware } from '../middleware/provider.js';
 import { anthropicToOpenAIConverter } from '../converters/anthropic-to-openai.js';
-import { openaiToAnthropicResponseConverter } from '../converters/openai-to-anthropic-response.js';
+import { openaiToAnthropicResponseConverter } from '../converters/openai-to-anthropic.js';
 import { streamProcessor } from '../processors/index.js';
 import type { ConversionContext } from '../types/index.js';
 

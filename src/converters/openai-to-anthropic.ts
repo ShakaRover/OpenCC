@@ -1,262 +1,205 @@
-/**
- * OpenAI to Anthropic Response Converter
- * Converts OpenAI API responses to Anthropic API format
- */
+import { logger } from '../utils/helpers.js';
+import { OpenAIResponse, OpenAIChoice, OpenAIToolCall, OpenAIMessage } from '../types/openai.js';
+import { AnthropicResponse, AnthropicContent, AnthropicUsage, AnthropicToolUseContent, AnthropicTextContent, AnthropicStopReason } from '../types/anthropic.js';
+import JSON5 from 'json5';
+import { DeepSeekTagParser, StreamingTagParser, ParsedReasoningContent } from './deepseek-tag-parser.js';
 
-import type {
-  OpenAIResponse,
-  OpenAIStreamChunk,
-  OpenAIError,
-  AnthropicResponse,
-  AnthropicStreamChunk,
-  AnthropicError,
-  AnthropicContent,
-  AnthropicStopReason,
-  AnthropicUsage,
-  ConversionResult,
-  ConversionContext,
-  StandardError
-} from '../types/index.js';
-
-import {
-  generateAnthropicMessageId,
-  getCurrentTimestamp,
-  stringToAnthropicContent,
-  safeJsonParse
-} from '../utils/helpers.js';
-
-export class OpenAIToAnthropicConverter {
+export class OpenAIToAnthropicResponseConverter {
+  private streamingTagParser?: StreamingTagParser;
+  
   /**
-   * Convert OpenAI response to Anthropic format
+   * 将OpenAI响应转换为Anthropic格式
    */
-  async convertResponse(
-    openaiResponse: OpenAIResponse,
-    context: ConversionContext,
-    originalModel: string
-  ): Promise<ConversionResult<AnthropicResponse>> {
-    try {
-      const choice = openaiResponse.choices[0];
-      if (!choice) {
-        return {
-          success: false,
-          error: {
-            type: 'api_error',
-            message: 'No choices in OpenAI response'
-          },
-          context
-        };
-      }
-
-      // Convert content
-      const content = this.convertResponseContent(choice.message);
-
-      // Convert usage statistics
-      const usage: AnthropicUsage = {
-        input_tokens: openaiResponse.usage.prompt_tokens,
-        output_tokens: openaiResponse.usage.completion_tokens
-      };
-
-      // Convert stop reason
-      const stopReason = this.convertFinishReason(choice.finish_reason);
-
-      const anthropicResponse: AnthropicResponse = {
-        id: generateAnthropicMessageId(),
-        type: 'message',
-        role: 'assistant',
-        content,
-        model: originalModel,
-        stop_reason: stopReason,
-        usage
-      };
-
-      return {
-        success: true,
-        data: anthropicResponse,
-        context
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          type: 'internal_error',
-          message: `Response conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        },
-        context
-      };
-    }
-  }
-
-  /**
-   * Convert OpenAI streaming chunk to Anthropic format
-   */
-  async convertStreamChunk(
-    openaiChunk: OpenAIStreamChunk,
-    context: ConversionContext,
+  convertResponse(
+    openaiResponse: OpenAIResponse, 
     originalModel: string,
-    isFirst: boolean = false,
-    isLast: boolean = false
-  ): Promise<ConversionResult<AnthropicStreamChunk[]>> {
-    try {
-      const chunks: AnthropicStreamChunk[] = [];
-
-      // Handle first chunk - send message_start
-      if (isFirst) {
-        chunks.push({
-          type: 'message_start',
-          message: {
-            id: generateAnthropicMessageId(),
-            type: 'message',
-            role: 'assistant',
-            content: [],
-            model: originalModel,
-            usage: {
-              input_tokens: 0,
-              output_tokens: 0
-            }
-          }
-        });
-
-        chunks.push({
-          type: 'content_block_start',
-          index: 0,
-          content_block: {
-            type: 'text',
-            text: ''
-          }
-        });
-      }
-
-      // Handle content delta
-      const choice = openaiChunk.choices[0];
-      if (choice && choice.delta.content) {
-        chunks.push({
-          type: 'content_block_delta',
-          index: 0,
-          delta: {
-            type: 'text_delta',
-            text: choice.delta.content
-          }
-        });
-      }
-
-      // Handle tool calls if present
-      if (choice && choice.delta.tool_calls) {
-        for (const toolCall of choice.delta.tool_calls) {
-          if (toolCall.function?.name) {
-            chunks.push({
-              type: 'content_block_start',
-              index: chunks.length,
-              content_block: {
-                type: 'tool_use'
-              }
-            });
-          }
-        }
-      }
-
-      // Handle completion
-      if (choice && choice.finish_reason) {
-        chunks.push({
-          type: 'content_block_stop',
-          index: 0
-        });
-
-        chunks.push({
-          type: 'message_delta',
-          delta: {
-            type: 'text_delta',
-            stop_reason: this.convertFinishReason(choice.finish_reason),
-            usage: openaiChunk.usage ? {
-              output_tokens: openaiChunk.usage.completion_tokens
-            } : undefined
-          }
-        });
-
-        chunks.push({
-          type: 'message_stop'
-        });
-      }
-
-      return {
-        success: true,
-        data: chunks,
-        context
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          type: 'internal_error',
-          message: `Stream chunk conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        },
-        context
-      };
+    requestId: string
+  ): AnthropicResponse {
+    const choice = openaiResponse.choices[0];
+    
+    if (!choice) {
+      logger.error('No choices found in OpenAI response', { requestId, openaiResponse });
+      throw new Error('Invalid OpenAI response: no choices available');
     }
+
+    // 记录响应转换信息
+    logger.info('Converting OpenAI response to Anthropic format', {
+      requestId,
+      originalModel,
+      responseModel: openaiResponse.model,
+      inputTokens: openaiResponse.usage?.prompt_tokens || 0,
+      outputTokens: openaiResponse.usage?.completion_tokens || 0,
+      finishReason: choice.finish_reason,
+      responseId: openaiResponse.id
+    });
+
+    // 生成Anthropic风格的消息ID
+    const anthropicMessageId = `msg_${this.generateRandomString(24)}`;
+
+    // 转换内容块（文本和工具调用）
+    const content = this.convertResponseContent(choice.message, requestId);
+
+    const anthropicResponse: AnthropicResponse = {
+      id: anthropicMessageId,
+      type: 'message',
+      role: 'assistant',
+      content,
+      model: originalModel, // 返回客户端原始请求的模型
+      stop_reason: this.convertFinishReason(choice.finish_reason),
+      usage: {
+        input_tokens: openaiResponse.usage?.prompt_tokens || 0,
+        output_tokens: openaiResponse.usage?.completion_tokens || 0
+      }
+    };
+
+    logger.debug('Response conversion completed', {
+      requestId,
+      anthropicMessageId,
+      contentLength: choice.message.content?.length || 0,
+      stopReason: anthropicResponse.stop_reason
+    });
+
+    return anthropicResponse;
   }
 
   /**
-   * Convert OpenAI error to Anthropic format
+   * 转换响应内容（文本和工具调用）
+   * 支持 DeepSeek reasoning_content 扩展和特殊标签处理
    */
-  async convertError(
-    openaiError: OpenAIError,
-    context: ConversionContext
-  ): Promise<ConversionResult<AnthropicError>> {
-    try {
-      const anthropicError: AnthropicError = {
-        type: 'error',
-        error: {
-          type: this.mapErrorType(openaiError.error.type),
-          message: openaiError.error.message
-        }
-      };
-
-      return {
-        success: true,
-        data: anthropicError,
-        context
-      };
-
-    } catch (error) {
-      return {
-        success: false,
-        error: {
-          type: 'internal_error',
-          message: `Error conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`
-        },
-        context
-      };
-    }
-  }
-
-  /**
-   * Convert OpenAI message content to Anthropic content array
-   */
-  private convertResponseContent(message: any): AnthropicContent[] {
+  private convertResponseContent(message: OpenAIMessage, requestId: string): AnthropicContent[] {
     const content: AnthropicContent[] = [];
 
-    // Add text content if present
-    if (message.content) {
-      content.push({
-        type: 'text',
-        text: message.content
+    // 添加推理内容（DeepSeek 兼容性，包含特殊标签处理）
+    if ((message as any).reasoning_content && (message as any).reasoning_content.trim()) {
+      const reasoningContent = (message as any).reasoning_content;
+      
+      // 解析特殊标签
+      const parsed = DeepSeekTagParser.parseReasoningContent(reasoningContent);
+      
+      logger.debug('Parsed reasoning content from DeepSeek', {
+        requestId,
+        reasoningLength: reasoningContent.length,
+        hasSpecialTags: parsed.hasSpecialTags,
+        thoughtsCount: parsed.thoughts.length,
+        toolCallsCount: parsed.toolCalls.length,
+        rawContentCount: parsed.rawContent.length
       });
-    }
-
-    // Add tool calls if present
-    if (message.tool_calls && Array.isArray(message.tool_calls)) {
-      for (const toolCall of message.tool_calls) {
-        content.push({
-          type: 'tool_use',
-          id: toolCall.id,
-          name: toolCall.function.name,
-          input: safeJsonParse(toolCall.function.arguments) || {}
+      
+      if (parsed.hasSpecialTags) {
+        // 添加思维过程内容块
+        parsed.thoughts.forEach(thought => {
+          if (thought.trim()) {
+            content.push({
+              type: 'text',
+              text: thought
+            });
+          }
         });
+        
+        // 添加工具调用内容块（作为标准的 tool_use 内容块）
+        parsed.toolCalls.forEach((toolCall, index) => {
+          try {
+            const toolUseContent: AnthropicToolUseContent = {
+              type: 'tool_use',
+              id: `tool_${this.generateRandomString(16)}_${index}`,
+              name: toolCall.name,
+              input: JSON.parse(toolCall.arguments)
+            };
+            content.push(toolUseContent);
+          } catch (error) {
+            logger.warn('Failed to parse tool call from reasoning content, adding as text', {
+              requestId,
+              toolName: toolCall.name,
+              toolArguments: toolCall.arguments,
+              error: error instanceof Error ? error.message : String(error)
+            });
+            
+            // 如果解析失败，作为文本内容添加
+            content.push({
+              type: 'text',
+              text: `Tool call: ${toolCall.name}(${toolCall.arguments})`
+            });
+          }
+        });
+        
+        // 添加原始内容块
+        parsed.rawContent.forEach(raw => {
+          if (raw.trim()) {
+            content.push({
+              type: 'text',
+              text: raw
+            });
+          }
+        });
+      } else {
+        // 没有特殊标签，直接使用原始内容
+        const reasoningTextContent: AnthropicTextContent = {
+          type: 'text',
+          text: reasoningContent
+        };
+        content.push(reasoningTextContent);
       }
     }
 
-    // If no content, add empty text block
+    // 添加标准文本内容
+    if (message.content && message.content.trim()) {
+      const textContent: AnthropicTextContent = {
+        type: 'text',
+        text: message.content
+      };
+      content.push(textContent);
+    }
+
+    // 添加工具调用
+    if (message.tool_calls && message.tool_calls.length > 0) {
+      logger.debug('Converting tool calls to Anthropic format', {
+        requestId,
+        toolCallCount: message.tool_calls.length
+      });
+
+      for (const toolCall of message.tool_calls) {
+        if (toolCall.type === 'function') {
+          try {
+            const input = this.parseToolArguments(toolCall.function.arguments, requestId, toolCall.id);
+            const toolUseContent: AnthropicToolUseContent = {
+              type: 'tool_use',
+              id: toolCall.id,
+              name: toolCall.function.name,
+              input
+            };
+            content.push(toolUseContent);
+
+            logger.debug('Converted tool call', {
+              requestId,
+              toolCallId: toolCall.id,
+              toolName: toolCall.function.name
+            });
+          } catch (error) {
+            logger.error('Failed to parse tool call arguments', {
+              requestId,
+              toolCallId: toolCall.id,
+              arguments: toolCall.function.arguments,
+              error: error instanceof Error ? error.message : String(error)
+            });
+
+            // Add as text content with error information
+            const errorText: AnthropicTextContent = {
+              type: 'text',
+              text: `Error: Invalid tool call arguments for ${toolCall.function.name}`
+            };
+            content.push(errorText);
+          }
+        } else {
+          logger.warn('Unknown tool call type', {
+            requestId,
+            toolCallType: (toolCall as any).type,
+            toolCallId: toolCall.id
+          });
+        }
+      }
+    }
+
+    // 确保至少有一个内容块
     if (content.length === 0) {
       content.push({
         type: 'text',
@@ -268,121 +211,337 @@ export class OpenAIToAnthropicConverter {
   }
 
   /**
-   * Convert OpenAI finish_reason to Anthropic stop_reason
+   * 解析工具调用参数，使用简化的两级解析策略
+   * 标准JSON解析 → JSON5解析 → 彻底失败
    */
-  private convertFinishReason(finishReason: string): AnthropicStopReason {
-    switch (finishReason) {
-      case 'stop':
-        return 'end_turn';
-      case 'length':
-        return 'max_tokens';
-      case 'tool_calls':
-        return 'tool_use';
-      case 'content_filter':
-        return 'end_turn';
-      default:
-        return 'end_turn';
+  private parseToolArguments(argumentsStr: string, requestId: string, toolCallId: string): any {
+    if (!argumentsStr || argumentsStr.trim() === '') {
+      return {};
     }
-  }
 
-  /**
-   * Map OpenAI error types to Anthropic error types
-   */
-  private mapErrorType(openaiErrorType: string): AnthropicError['error']['type'] {
-    switch (openaiErrorType) {
-      case 'invalid_request_error':
-        return 'invalid_request_error';
-      case 'authentication_error':
-        return 'authentication_error';
-      case 'rate_limit_error':
-        return 'rate_limit_error';
-      case 'api_error':
-      case 'server_error':
-        return 'api_error';
-      default:
-        return 'api_error';
-    }
-  }
+    const parseContext = {
+      requestId,
+      toolCallId,
+      originalString: argumentsStr
+    };
 
-  /**
-   * Create stream data format for SSE
-   */
-  createStreamData(chunk: AnthropicStreamChunk): string {
-    return `data: ${JSON.stringify(chunk)}\n\n`;
-  }
+    try {
+      // 首先尝试标准JSON解析
+      const result = JSON.parse(argumentsStr);
+      
+      logger.info('Successfully parsed arguments with standard JSON', {
+        requestId,
+        toolCallId,
+        originalLength: argumentsStr.length,
+        method: 'json-standard'
+      });
+      
+      return result;
+    } catch (error) {
+      logger.warn('Standard JSON parse failed, attempting JSON5', {
+        requestId,
+        toolCallId,
+        arguments: argumentsStr.substring(0, 200),
+        error: error instanceof Error ? error.message : String(error)
+      });
 
-  /**
-   * Create stream end marker
-   */
-  createStreamEnd(): string {
-    return 'data: [DONE]\n\n';
-  }
-
-  /**
-   * Process and format streaming response
-   */
-  async processStreamingResponse(
-    openaiChunks: AsyncIterable<string>,
-    context: ConversionContext,
-    originalModel: string
-  ): Promise<AsyncIterable<string>> {
-    const converter = this;
-    
-    return {
-      async *[Symbol.asyncIterator]() {
-        let isFirst = true;
-        let buffer = '';
+      try {
+        // 尝试JSON5解析（支持单引号、无引号属性名等）
+        const result = JSON5.parse(argumentsStr);
         
-        try {
-          for await (const chunk of openaiChunks) {
-            buffer += chunk;
-            
-            // Process complete lines
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.substring(6).trim();
-                
-                if (data === '[DONE]') {
-                  yield converter.createStreamEnd();
-                  return;
-                }
-                
-                if (data) {
-                  try {
-                    const openaiChunk = JSON.parse(data) as OpenAIStreamChunk;
-                    const result = await converter.convertStreamChunk(
-                      openaiChunk,
-                      context,
-                      originalModel,
-                      isFirst
-                    );
-                    
-                    if (result.success && result.data) {
-                      for (const anthropicChunk of result.data) {
-                        yield converter.createStreamData(anthropicChunk);
-                      }
-                    }
-                    
-                    isFirst = false;
-                  } catch (parseError) {
-                    // Skip invalid JSON chunks
-                    console.warn('Failed to parse streaming chunk:', parseError);
-                  }
-                }
-              }
+        logger.info('Successfully parsed arguments with JSON5', {
+          requestId,
+          toolCallId,
+          originalLength: argumentsStr.length,
+          method: 'json5'
+        });
+        
+        return result;
+      } catch (secondError) {
+        logger.error('All parsing attempts failed', {
+          requestId,
+          toolCallId,
+          originalString: argumentsStr.substring(0, 200),
+          jsonError: error instanceof Error ? error.message : String(error),
+          json5Error: secondError instanceof Error ? secondError.message : String(secondError)
+        });
+
+        // 彻底失败，直接抛出错误
+        throw new Error(`Failed to parse tool arguments: ${secondError instanceof Error ? secondError.message : String(secondError)}`);
+      }
+    }
+  }
+
+  /**
+   * 转换流式响应块
+   */
+  convertStreamChunk(
+    openaiChunk: any,
+    originalModel: string,
+    requestId: string,
+    isFirst: boolean = false
+  ): string[] {
+    const chunks: string[] = [];
+
+    try {
+      // 处理流式响应的第一个块
+      if (isFirst) {
+        const messageStartEvent = {
+          type: 'message_start',
+          message: {
+            id: `msg_${this.generateRandomString(24)}`,
+            type: 'message',
+            role: 'assistant',
+            content: [],
+            model: originalModel,
+            usage: {
+              input_tokens: 0,
+              output_tokens: 0
             }
           }
-        } catch (error) {
-          // Send error in Anthropic format
-          const errorChunk: AnthropicStreamChunk = {
+        };
+
+        const contentBlockStartEvent = {
+          type: 'content_block_start',
+          index: 0,
+          content_block: {
+            type: 'text',
+            text: ''
+          }
+        };
+
+        chunks.push(`event: message_start\\ndata: ${JSON.stringify(messageStartEvent)}\\n\\n`);
+        chunks.push(`event: content_block_start\\ndata: ${JSON.stringify(contentBlockStartEvent)}\\n\\n`);
+      }
+
+      // 处理内容增量和工具调用
+      const choice = openaiChunk.choices?.[0];
+      
+      // 处理推理内容增量（DeepSeek 兼容性，包含特殊标签处理）
+      if (choice?.delta?.reasoning_content) {
+        // 初始化流式标签解析器（如果需要）
+        if (!this.streamingTagParser) {
+          this.streamingTagParser = new StreamingTagParser();
+        }
+        
+        // 使用标签解析器处理内容
+        const tagResult = this.streamingTagParser.processChunk(choice.delta.reasoning_content);
+        
+        // 使用清理后的内容
+        const reasoningText = tagResult.cleanedContent || choice.delta.reasoning_content;
+        
+        if (reasoningText.trim()) {
+          const reasoningDeltaEvent = {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'text_delta',
+              text: reasoningText
+            }
+          };
+
+          chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(reasoningDeltaEvent)}\\n\\n`);
+          
+          logger.debug('Added reasoning content delta from DeepSeek', {
+            requestId,
+            reasoningLength: choice.delta.reasoning_content.length,
+            cleanedLength: reasoningText.length,
+            hasSpecialTags: tagResult.isTagStart || tagResult.isTagEnd,
+            tagType: tagResult.tagType
+          });
+        }
+      }
+      
+      // 处理文本内容增量
+      if (choice?.delta?.content) {
+        const deltaEvent = {
+          type: 'content_block_delta',
+          index: 0,
+          delta: {
+            type: 'text_delta',
+            text: choice.delta.content
+          }
+        };
+
+        chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(deltaEvent)}\\n\\n`);
+      }
+      
+      // 处理工具调用增量
+      if (choice?.delta?.tool_calls) {
+        for (const toolCall of choice.delta.tool_calls) {
+          if (toolCall.type === 'function' && toolCall.function) {
+            const toolIndex = (toolCall.index || 0) + 1; // 文本块是index 0，工具调用从1开始
+            
+            // 如果是工具调用的开始，发送 content_block_start 事件
+            if (toolCall.id && toolCall.function.name) {
+              const toolBlockStartEvent = {
+                type: 'content_block_start',
+                index: toolIndex,
+                content_block: {
+                  type: 'tool_use',
+                  id: toolCall.id,
+                  name: toolCall.function.name,
+                  input: {}
+                }
+              };
+              
+              chunks.push(`event: content_block_start\\ndata: ${JSON.stringify(toolBlockStartEvent)}\\n\\n`);
+              
+              logger.debug('Started tool call block in stream', {
+                requestId,
+                toolCallId: toolCall.id,
+                toolName: toolCall.function.name,
+                index: toolIndex
+              });
+            }
+            
+            // 如果有参数增量，发送 content_block_delta 事件
+            if (toolCall.function.arguments) {
+              const toolDeltaEvent = {
+                type: 'content_block_delta',
+                index: toolIndex,
+                delta: {
+                  type: 'input_json_delta',
+                  partial_json: toolCall.function.arguments
+                }
+              };
+              
+              chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(toolDeltaEvent)}\\n\\n`);
+            }
+          }
+        }
+      }
+
+      // 处理结束信号
+      if (choice?.finish_reason) {
+        // 应用特殊处理规则：当 finishReason 为 "stop" 但 content 为空且 reasoning_content 不为空时
+        const hasReasoningContent = choice.delta?.reasoning_content && choice.delta.reasoning_content.trim();
+        const hasRegularContent = choice.delta?.content && choice.delta.content.trim();
+        
+        if (choice.finish_reason === 'stop' && !hasRegularContent && hasReasoningContent) {
+          // 跳过结束处理逻辑，不发送 message_stop、content_block_stop、message_delta 事件
+          logger.debug('Skipping end processing for reasoning-only completion', {
+            requestId,
+            finishReason: choice.finish_reason,
+            hasRegularContent: !!hasRegularContent,
+            hasReasoningContent: !!hasReasoningContent
+          });
+        } else {
+          // 正常结束处理
+          // 如果有工具调用，需要先关闭所有工具调用块
+          if (choice.delta?.tool_calls || choice.message?.tool_calls) {
+            const toolCallsCount = choice.delta?.tool_calls?.length || choice.message?.tool_calls?.length || 0;
+            
+            // 关闭所有工具调用块
+            for (let i = 1; i <= toolCallsCount; i++) {
+              const toolBlockStopEvent = {
+                type: 'content_block_stop',
+                index: i
+              };
+              chunks.push(`event: content_block_stop\\ndata: ${JSON.stringify(toolBlockStopEvent)}\\n\\n`);
+            }
+          }
+          
+          // 关闭文本块
+          const contentBlockStopEvent = {
+            type: 'content_block_stop',
+            index: 0
+          };
+
+          const messageDeltaEvent = {
+            type: 'message_delta',
+            delta: {
+              stop_reason: this.convertFinishReason(choice.finish_reason),
+              usage: openaiChunk.usage ? {
+                output_tokens: openaiChunk.usage.completion_tokens || 0
+              } : undefined
+            }
+          };
+
+          const messageStopEvent = {
             type: 'message_stop'
           };
-          yield converter.createStreamData(errorChunk);
+
+          chunks.push(`event: content_block_stop\\ndata: ${JSON.stringify(contentBlockStopEvent)}\\n\\n`);
+          chunks.push(`event: message_delta\\ndata: ${JSON.stringify(messageDeltaEvent)}\\n\\n`);
+          chunks.push(`event: message_stop\\ndata: ${JSON.stringify(messageStopEvent)}\\n\\n`);
         }
+      }
+
+    } catch (error) {
+      logger.error('Error converting stream chunk', {
+        requestId,
+        error: error instanceof Error ? error.message : String(error),
+        chunk: openaiChunk
+      });
+      
+      // 发送错误事件到流中
+      const errorEvent = {
+        type: 'error',
+        error: {
+          type: 'api_error',
+          message: 'Error processing stream chunk'
+        }
+      };
+      
+      chunks.push(`event: error\\ndata: ${JSON.stringify(errorEvent)}\\n\\n`);
+    }
+
+    return chunks;
+  }
+
+  /**
+   * 转换结束原因
+   */
+  private convertFinishReason(reason: string): AnthropicStopReason {
+    const mapping: Record<string, AnthropicStopReason> = {
+      'stop': 'end_turn',
+      'length': 'max_tokens',
+      'tool_calls': 'tool_use',
+      'content_filter': 'stop_sequence',
+      'function_call': 'tool_use'
+    };
+    
+    const converted = mapping[reason] || 'end_turn';
+    
+    logger.debug('Converted finish reason', {
+      original: reason,
+      converted
+    });
+    
+    return converted;
+  }
+
+  /**
+   * 生成随机字符串
+   */
+  private generateRandomString(length: number): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  /**
+   * 处理错误响应
+   */
+  convertErrorResponse(error: any, originalModel: string, requestId: string): any {
+    logger.error('Converting error response to Anthropic format', {
+      requestId,
+      originalModel,
+      error: error.message || error
+    });
+
+    return {
+      type: 'error',
+      error: {
+        type: 'api_error',
+        message: error.message || 'Unknown error occurred'
       }
     };
   }
 }
+
+export const openaiToAnthropicResponseConverter = new OpenAIToAnthropicResponseConverter();
