@@ -130,7 +130,13 @@ You have access to the following tools:
 ## Tool Invocation Format
 
 **IMPORTANT**: 
-* You MUST adhere to this exact format for tool use. Chain multiple calls directly without separators.
-`<｜tool calls begin｜><｜tool call begin｜>tool_name<｜tool sep｜>tool_arguments_as_json<｜tool call end｜><｜tool calls end｜>`
+* **ALWAYS** adhere to this exact format for tool use:
+<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>tool_call_name<｜tool▁sep｜>tool_call_arguments<｜tool▁call▁end｜>{additional_tool_calls}<｜tool▁calls▁end｜>
+
+Where:
+- `tool_call_name` must be an exact match to one of the available tools
+- `tool_call_arguments` must be valid JSON that strictly follows the tool's Parameters Schema
+- For multiple tool calls, chain them directly without separators or spaces
+
 * If a tool is required, you must provide the specific **command** information in the current response, without delaying to the next turn.
 * Don't simply state what you want to do. Instead, clearly state what you're doing and the specific tool **command** you're using to accomplish it, and send it using the tool format. Example of a mistake: Let me check the date for you.
