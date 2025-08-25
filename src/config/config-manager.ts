@@ -262,7 +262,7 @@ export class ConfigManager {
       // CLI参数已经标准化，只需要处理环境变量
       const envBaseUrl = process.env.OPENAI_BASE_URL ? this.normalizeBaseUrl(process.env.OPENAI_BASE_URL) : 'https://api.openai.com';
       const normalizedBaseUrl = this.cliArgs.openaiBaseUrl || envBaseUrl;
-      const baseUrl = normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : normalizedBaseUrl + '/v1';
+      const baseUrl = normalizedBaseUrl;
       
       openaiConfig = {
         apiKey,
@@ -274,13 +274,9 @@ export class ConfigManager {
       };
     } else {
       // qwen-cli模式
-      const envBaseUrl = process.env.OPENAI_BASE_URL ? this.normalizeBaseUrl(process.env.OPENAI_BASE_URL) : 'https://api.openai.com';
-      const normalizedBaseUrl = envBaseUrl;
-      const baseUrl = normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : normalizedBaseUrl + '/v1';
-      
       openaiConfig = {
         apiKey: process.env.OPENAI_API_KEY || '',
-        baseUrl: envBaseUrl,
+        baseUrl: "",
         timeout: parseInt(process.env.OPENAI_TIMEOUT || '30000', 10),
         maxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3', 10),
         configMode: ConfigMode.QWEN_CLI,

@@ -163,16 +163,15 @@ class ConfigManager {
 ### 2. Base URL 标准化
 
 ```typescript
-class ConfigManager {
-  private resolveBaseUrl(url: string): string {
+  private normalizeBaseUrl(url: string): string {
     let normalizedUrl = url.trim();
     
     // 移除末尾的斜杠
     normalizedUrl = normalizedUrl.replace(/\/+$/, '');
     
-    // 如果没有 /v1 后缀，则添加
-    if (!normalizedUrl.endsWith('/v1')) {
-      normalizedUrl += '/v1';
+    // 如果URL以/v1结尾，移除它（因为/v1应该在endpoint path中）
+    if (normalizedUrl.endsWith('/v1')) {
+      normalizedUrl = normalizedUrl.slice(0, -3); // 移除 '/v1'
     }
     
     // 确保有协议头
@@ -182,7 +181,6 @@ class ConfigManager {
     
     return normalizedUrl;
   }
-}
 ```
 
 ### 3. 增强的模型映射系统
