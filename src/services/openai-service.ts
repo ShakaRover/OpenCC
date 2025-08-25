@@ -12,7 +12,7 @@ import type {
   OpenAIModelsResponse,
   OpenAIConfig,
   ConversionContext
-} from '../types/index.js';
+} from '@/types';
 
 export class OpenAIService {
   private client: AxiosInstance;

@@ -1,6 +1,6 @@
-import app from './app.js';
-import { logger } from './utils/helpers.js';
-import { configManager } from './config/index.js';
+import app from './app';
+import { logger } from './utils/helpers';
+import { configManager } from './config';
 
 // 启动服务器
 async function startServer() {

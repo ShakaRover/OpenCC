@@ -5,7 +5,7 @@
 
 import cors from 'cors';
 import type { CorsOptions } from 'cors';
-import type { ServerConfig } from '../types/index.js';
+import type { ServerConfig } from '@/types';
 
 /**
  * Create CORS middleware with configuration

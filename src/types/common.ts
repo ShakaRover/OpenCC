@@ -2,8 +2,8 @@
  * Common types and interfaces for OpenCC
  */
 
-import type { AnthropicModel } from './anthropic.js';
-import type { OpenAIModel } from './openai.js';
+import type { AnthropicModel } from './anthropic';
+import type { OpenAIModel } from './openai';
 
 // 配置模式枚举
 export enum ConfigMode {

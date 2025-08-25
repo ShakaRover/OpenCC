@@ -1,7 +1,7 @@
 import winston from 'winston';
 import DailyRotateFile from 'winston-daily-rotate-file';
 import path from 'path';
-import { configManager } from '../config/index.js';
+import { configManager } from '@/config';
 
 // 配置Winston日志系统 - 双重输出（控制台+文件）
 const loggerConfig = {

@@ -3,8 +3,8 @@
  * Manages Qwen-specific configuration settings
  */
 
-import { configManager } from '../../config/index.js';
-import type { ConfigProvider } from '../base/index.js';
+import { configManager } from '@/config';
+import type { ConfigProvider } from '@/providers/base';
 
 /**
  * Qwen Configuration Provider

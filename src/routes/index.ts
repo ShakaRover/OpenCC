@@ -2,8 +2,8 @@
  * Routes modules export barrel
  */
 
-import messagesRouter from './messages.js';
-import modelsRouter from './models.js';
-import healthRouter from './health.js';
+import messagesRouter from './messages';
+import modelsRouter from './models';
+import healthRouter from './health';
 
 export { messagesRouter, modelsRouter, healthRouter };

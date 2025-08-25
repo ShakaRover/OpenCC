@@ -3,7 +3,7 @@
  * Handles URL construction for different API protocols and endpoint structures
  */
 
-import type { APIEndpoint, URLBuildOptions } from './api-provider.interface.js';
+import type { APIEndpoint, URLBuildOptions } from './api-provider.interface';
 
 /**
  * Universal URL Builder class

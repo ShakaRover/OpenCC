@@ -3,7 +3,7 @@
  * Defines the contract for all API providers in the system
  */
 
-import type { OpenAIRequest, OpenAIResponse, OpenAIModelsResponse, ConversionContext } from '../../types/index.js';
+import type { OpenAIRequest, OpenAIResponse, OpenAIModelsResponse, ConversionContext } from '@/types';
 
 /**
  * Protocol types supported by the system

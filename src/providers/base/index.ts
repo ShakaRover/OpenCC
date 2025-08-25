@@ -16,11 +16,11 @@ export type {
   ProviderContext,
   ProviderError,
   HttpMethod
-} from './api-provider.interface.js';
+} from './api-provider.interface';
 
 // Export ProtocolType as both type and value
-export { ProtocolType } from './api-provider.interface.js';
-export type { ProtocolType as ProtocolTypeType } from './api-provider.interface.js';
+export { ProtocolType } from './api-provider.interface';
+export type { ProtocolType as ProtocolTypeType } from './api-provider.interface';
 
 // Protocol endpoints
 export {
@@ -33,18 +33,18 @@ export {
   getEndpoint,
   supportsEndpoint,
   getSupportedEndpoints
-} from './protocol-endpoints.js';
+} from './protocol-endpoints';
 
 // URL builder utilities
 export {
   URLBuilder,
   URLBuilderInstance
-} from './url-builder.js';
+} from './url-builder';
 
 // Base provider implementation
 export {
   BaseProvider
-} from './base-provider.js';
+} from './base-provider';
 
 // Re-export protocol types for convenience
 // (removed duplicate export)

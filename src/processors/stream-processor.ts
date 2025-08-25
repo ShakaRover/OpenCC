@@ -4,11 +4,11 @@
  */
 
 import { Request, Response } from 'express';
-import { logger, logOriginalResponse, logConvertedResponse } from '../utils/helpers.js';
-import { openaiToAnthropicResponseConverter } from '../converters/openai-to-anthropic.js';
-import type { APIProvider } from '../providers/index.js';
-import { ProtocolType } from '../providers/index.js';
-import { configManager } from '../config/index.js';
+import { logger, logOriginalResponse, logConvertedResponse } from '@/utils/helpers';
+import { openaiToAnthropicResponseConverter } from '@/converters/openai-to-anthropic';
+import type { APIProvider } from '@/providers';
+import { ProtocolType } from '@/providers';
+import { configManager } from '@/config';
 
 /**
  * Stream processing context

@@ -5,10 +5,10 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { logger } from '../utils/helpers.js';
-import { configManager } from '../config/index.js';
-import { providerFactory } from '../providers/index.js';
-import type { APIProvider } from '../providers/index.js';
+import { logger } from '@/utils/helpers';
+import { configManager } from '@/config';
+import { providerFactory } from '@/providers';
+import type { APIProvider } from '@/providers';
 
 // Extend Express Request interface to include provider information
 declare global {

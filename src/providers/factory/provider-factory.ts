@@ -3,13 +3,13 @@
  * Creates and manages API provider instances based on configuration mode
  */
 
-import { logger } from '../../utils/helpers.js';
-import { configManager } from '../../config/index.js';
-import { ConfigMode } from '../../types/common.js';
-import { QwenProvider } from '../qwen/index.js';
-import { OpenAIProvider } from '../openai/index.js';
-import type { APIProvider } from '../base/index.js';
-import { ProtocolType } from '../base/index.js';
+import { logger } from '@/utils/helpers';
+import { configManager } from '@/config';
+import { ConfigMode } from '@/types/common';
+import { QwenProvider } from '@/providers/qwen';
+import { OpenAIProvider } from '@/providers/openai';
+import type { APIProvider } from '@/providers/base';
+import { ProtocolType } from '@/providers/base';
 
 /**
  * Provider Factory interface

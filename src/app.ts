@@ -1,9 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import { logger } from './utils/helpers.js';
-import messagesRouter from './routes/messages.js';
-import modelsRouter from './routes/models.js';
-import healthRouter from './routes/health.js';
+import { logger } from './utils/helpers';
+import messagesRouter from './routes/messages';
+import modelsRouter from './routes/models';
+import healthRouter from './routes/health';
 
 // 创建Express应用
 const app = express();

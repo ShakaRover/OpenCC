@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { qwenOAuthManager } from '../services/qwen-oauth-manager.js';
-import { logger } from '../utils/helpers.js';
+import { qwenOAuthManager } from '@/services/qwen-oauth-manager';
+import { logger } from '@/utils/helpers';
 
 // 扩展Request类型以包含自定义属性
 declare global {

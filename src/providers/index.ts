@@ -4,13 +4,13 @@
  */
 
 // Base provider interfaces and utilities
-export * from './base/index.js';
+export * from './base';
 
 // Qwen provider implementation
-export * from './qwen/index.js';
+export * from './qwen';
 
 // OpenAI provider implementation
-export * from './openai/index.js';
+export * from './openai';
 
 // Provider factory
-export * from './factory/index.js';
+export * from './factory';

@@ -3,8 +3,8 @@
  * Defines endpoint structures for different API protocols
  */
 
-import type { ProtocolEndpoints, APIEndpoint } from './api-provider.interface.js';
-import { ProtocolType } from './api-provider.interface.js';
+import type { ProtocolEndpoints, APIEndpoint } from './api-provider.interface';
+import { ProtocolType } from './api-provider.interface';
 
 /**
  * OpenAI Protocol Endpoints (also used by Qwen and other OpenAI-compatible APIs)

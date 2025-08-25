@@ -4,7 +4,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import type { AnthropicError } from '../types/index.js';
+import type { AnthropicError } from '@/types';
 
 interface AuthenticatedRequest extends Request {
   apiKey?: string;

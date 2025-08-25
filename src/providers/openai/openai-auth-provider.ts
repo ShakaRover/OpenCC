@@ -3,8 +3,8 @@
  * Implements AuthProvider interface for OpenAI API Key authentication
  */
 
-import { logger } from '../../utils/helpers.js';
-import type { AuthProvider } from '../base/index.js';
+import { logger } from '@/utils/helpers';
+import type { AuthProvider } from '@/providers/base';
 
 /**
  * OpenAI Authentication Provider

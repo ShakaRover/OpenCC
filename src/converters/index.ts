@@ -2,5 +2,5 @@
  * Converter modules export barrel
  */
 
-export { AnthropicToOpenAIConverter } from './anthropic-to-openai.js';
-export { OpenAIToAnthropicResponseConverter } from './openai-to-anthropic.js';
+export { AnthropicToOpenAIConverter } from './anthropic-to-openai';
+export { OpenAIToAnthropicResponseConverter } from './openai-to-anthropic';

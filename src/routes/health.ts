@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
-import { logger, generateRequestId } from '../utils/helpers.js';
-import { configManager } from '../config/index.js';
-import { oauthMiddleware } from '../middleware/oauth.js';
+import { logger, generateRequestId } from '@/utils/helpers';
+import { configManager } from '@/config';
+import { oauthMiddleware } from '@/middleware/oauth';
 
 const router = express.Router();
 

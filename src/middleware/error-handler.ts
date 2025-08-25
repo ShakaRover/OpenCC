@@ -5,9 +5,9 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { logger } from '../utils/helpers.js';
-import type { AnthropicError, StandardError } from '../types/index.js';
-import type { ProviderError } from '../providers/index.js';
+import { logger } from '@/utils/helpers';
+import type { AnthropicError, StandardError } from '@/types';
+import type { ProviderError } from '@/providers';
 
 /**
  * Global error handler middleware

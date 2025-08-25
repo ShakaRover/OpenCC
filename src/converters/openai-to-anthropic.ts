@@ -1,8 +1,8 @@
-import { logger } from '../utils/helpers.js';
-import { OpenAIResponse, OpenAIChoice, OpenAIToolCall, OpenAIMessage } from '../types/openai.js';
-import { AnthropicResponse, AnthropicContent, AnthropicUsage, AnthropicToolUseContent, AnthropicTextContent, AnthropicStopReason } from '../types/anthropic.js';
+import { logger } from '@/utils/helpers';
+import { OpenAIResponse, OpenAIChoice, OpenAIToolCall, OpenAIMessage } from '@/types/openai';
+import { AnthropicResponse, AnthropicContent, AnthropicUsage, AnthropicToolUseContent, AnthropicTextContent, AnthropicStopReason } from '@/types/anthropic';
 import JSON5 from 'json5';
-import { DeepSeekTagParser, StreamingTagParser, ParsedReasoningContent } from './deepseek-tag-parser.js';
+import { DeepSeekTagParser, StreamingTagParser, ParsedReasoningContent } from '@/converters/deepseek-tag-parser';
 
 export class OpenAIToAnthropicResponseConverter {
   private streamingTagParser?: StreamingTagParser;

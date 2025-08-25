@@ -3,23 +3,23 @@
  * Implements APIProvider interface for standard OpenAI API
  */
 
-import { logger } from '../../utils/helpers.js';
-import { BaseProvider } from '../base/index.js';
-import { ProtocolType } from '../base/index.js';
-import { OpenAIAuthProvider } from './openai-auth-provider.js';
-import { OpenAIConfigProvider } from './openai-config-provider.js';
+import { logger } from '@/utils/helpers';
+import { BaseProvider } from '@/providers/base';
+import { ProtocolType } from '@/providers/base';
+import { OpenAIAuthProvider } from './openai-auth-provider';
+import { OpenAIConfigProvider } from './openai-config-provider';
 import type {
   ProviderCapabilities,
   ProviderHealthStatus,
   APIEndpoint,
   URLBuildOptions
-} from '../base/index.js';
+} from '@/providers/base';
 import type {
   OpenAIRequest,
   OpenAIResponse,
   OpenAIModelsResponse,
   ConversionContext
-} from '../../types/index.js';
+} from '@/types';
 
 /**
  * OpenAI API Provider

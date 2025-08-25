@@ -3,9 +3,9 @@
  * Wraps the existing Qwen OAuth manager into the AuthProvider interface
  */
 
-import { logger } from '../../utils/helpers.js';
-import { qwenOAuthManager } from '../../services/qwen-oauth-manager.js';
-import type { AuthProvider } from '../base/index.js';
+import { logger } from '@/utils/helpers';
+import { qwenOAuthManager } from '@/services/qwen-oauth-manager';
+import type { AuthProvider } from '@/providers/base';
 
 /**
  * Qwen OAuth Authentication Provider

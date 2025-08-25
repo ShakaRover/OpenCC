@@ -7,13 +7,13 @@ export {
   optionalAuthMiddleware,
   ApiKeyRateLimiter,
   extractUserInfo
-} from './auth.js';
+} from './auth';
 
 export { 
   createCorsMiddleware,
   createDevCorsMiddleware,
   createProdCorsMiddleware
-} from './cors.js';
+} from './cors';
 
 export { 
   errorHandler,
@@ -22,7 +22,7 @@ export {
   validationErrorHandler,
   timeoutErrorHandler,
   errorLogger
-} from './error-handler.js';
+} from './error-handler';
 
 export { 
   createLogger,
@@ -30,7 +30,7 @@ export {
   performanceLogger,
   errorTracker,
   MetricsCollector
-} from './logging.js';
+} from './logging';
 
 export { 
   createRateLimiter,
@@ -39,4 +39,4 @@ export {
   createTieredRateLimiter,
   createHealthCheckRateLimiter,
   RateLimitMetrics
-} from './rate-limit.js';
+} from './rate-limit';

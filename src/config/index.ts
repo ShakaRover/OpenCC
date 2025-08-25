@@ -2,4 +2,4 @@
  * Configuration modules export barrel
  */
 
-export { ConfigManager, configManager } from './config-manager.js';
+export { ConfigManager, configManager } from './config-manager';

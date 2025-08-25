@@ -3,9 +3,9 @@
  * Abstract base class providing common functionality for all API providers
  */
 
-import { logger } from '../../utils/helpers.js';
-import { URLBuilder } from './url-builder.js';
-import { getProtocolEndpoints } from './protocol-endpoints.js';
+import { logger } from '@/utils/helpers';
+import { URLBuilder } from './url-builder';
+import { getProtocolEndpoints } from './protocol-endpoints';
 import type {
   APIProvider,
   AuthProvider,
@@ -18,13 +18,13 @@ import type {
   ProviderContext,
   ProviderError,
   ProtocolEndpoints
-} from './api-provider.interface.js';
+} from './api-provider.interface';
 import type {
   OpenAIRequest,
   OpenAIResponse,
   OpenAIModelsResponse,
   ConversionContext
-} from '../../types/index.js';
+} from '@/types';
 
 /**
  * Abstract base provider class

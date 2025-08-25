@@ -3,23 +3,23 @@
  * Implements APIProvider interface for Qwen/通义千问 API
  */
 
-import { logger } from '../../utils/helpers.js';
-import { BaseProvider, URLBuilder } from '../base/index.js';
-import { ProtocolType } from '../base/index.js';
-import { QwenAuthProvider } from './qwen-auth-provider.js';
-import { QwenConfigProvider } from './qwen-config-provider.js';
+import { logger } from '@/utils/helpers';
+import { BaseProvider, URLBuilder } from '@/providers/base';
+import { ProtocolType } from '@/providers/base';
+import { QwenAuthProvider } from './qwen-auth-provider';
+import { QwenConfigProvider } from './qwen-config-provider';
 import type {
   ProviderCapabilities,
   ProviderHealthStatus,
   APIEndpoint,
   URLBuildOptions
-} from '../base/index.js';
+} from '@/providers/base';
 import type {
   OpenAIRequest,
   OpenAIResponse,
   OpenAIModelsResponse,
   ConversionContext
-} from '../../types/index.js';
+} from '@/types';
 
 /**
  * Qwen API Provider

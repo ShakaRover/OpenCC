@@ -3,4 +3,4 @@
  * Centralized exports for processing utilities
  */
 
-export * from './stream-processor.js';
+export * from './stream-processor';

@@ -3,6 +3,6 @@
  * Centralized exports for Qwen-specific provider implementations
  */
 
-export { QwenAuthProvider } from './qwen-auth-provider.js';
-export { QwenConfigProvider } from './qwen-config-provider.js';
-export { QwenProvider } from './qwen-provider.js';
+export { QwenAuthProvider } from './qwen-auth-provider';
+export { QwenConfigProvider } from './qwen-config-provider';
+export { QwenProvider } from './qwen-provider';

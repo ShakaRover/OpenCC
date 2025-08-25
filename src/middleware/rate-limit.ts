@@ -5,7 +5,7 @@
 
 import rateLimit from 'express-rate-limit';
 import type { Request, Response } from 'express';
-import type { RateLimitConfig, AnthropicError } from '../types/index.js';
+import type { RateLimitConfig, AnthropicError } from '@/types';
 
 /**
  * Create rate limiter middleware

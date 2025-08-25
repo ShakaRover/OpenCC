@@ -5,8 +5,8 @@
 
 import { Request, Response, NextFunction } from 'express';
 import winston from 'winston';
-import type { LoggingConfig } from '../types/index.js';
-import { generateRequestId } from '../utils/helpers.js';
+import type { LoggingConfig } from '@/types';
+import { generateRequestId } from '@/utils/helpers';
 
 interface LoggedRequest extends Request {
   startTime?: number;

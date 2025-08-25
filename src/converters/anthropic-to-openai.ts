@@ -3,10 +3,10 @@
  * Converts Anthropic API requests to OpenAI API format
  */
 
-import { logger, extractTextFromContent } from '../utils/helpers.js';
-import { configManager } from '../config/index.js';
-import { AnthropicTool, AnthropicRequest, AnthropicMessage, AnthropicContent, AnthropicToolUseContent, AnthropicToolResultContent } from '../types/anthropic.js';
-import { OpenAITool, OpenAIRequest, OpenAIMessage, OpenAIToolChoice } from '../types/openai.js';
+import { logger, extractTextFromContent } from '@/utils/helpers';
+import { configManager } from '@/config';
+import { AnthropicTool, AnthropicRequest, AnthropicMessage, AnthropicContent, AnthropicToolUseContent, AnthropicToolResultContent } from '@/types/anthropic';
+import { OpenAITool, OpenAIRequest, OpenAIMessage, OpenAIToolChoice } from '@/types/openai';
 
 // 删除本地类型定义，使用导入的类型
 
