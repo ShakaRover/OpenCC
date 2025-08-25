@@ -6,6 +6,9 @@ import { DeepSeekTagParser, StreamingTagParser, ParsedReasoningContent } from '@
 
 export class OpenAIToAnthropicResponseConverter {
   private streamingTagParser?: StreamingTagParser;
+  private contentStreamingTagParser?: StreamingTagParser; // 专用于 content 字段的流式解析器
+  private hasReasoningInStream: boolean = false; // 跟踪流式响应中是否有推理内容
+  private hasContentInStream: boolean = false; // 跟踪流式响应中是否有常规内容
   
   /**
    * 将OpenAI响应转换为Anthropic格式
@@ -65,6 +68,7 @@ export class OpenAIToAnthropicResponseConverter {
   /**
    * 转换响应内容（文本和工具调用）
    * 支持 DeepSeek reasoning_content 扩展和特殊标签处理
+   * 同时支持 content 字段的特殊标签解析
    */
   private convertResponseContent(message: OpenAIMessage, requestId: string): AnthropicContent[] {
     const content: AnthropicContent[] = [];
@@ -141,13 +145,74 @@ export class OpenAIToAnthropicResponseConverter {
       }
     }
 
-    // 添加标准文本内容
+    // 添加标准文本内容（支持特殊标签解析）
     if (message.content && message.content.trim()) {
-      const textContent: AnthropicTextContent = {
-        type: 'text',
-        text: message.content
-      };
-      content.push(textContent);
+      // 解析 content 字段的特殊标签
+      const parsed = DeepSeekTagParser.parseReasoningContent(message.content);
+      
+      logger.debug('Parsed content field for special tags', {
+        requestId,
+        contentLength: message.content.length,
+        hasSpecialTags: parsed.hasSpecialTags,
+        thoughtsCount: parsed.thoughts.length,
+        toolCallsCount: parsed.toolCalls.length,
+        rawContentCount: parsed.rawContent.length
+      });
+      
+      if (parsed.hasSpecialTags) {
+        // 添加思维过程内容块
+        parsed.thoughts.forEach(thought => {
+          if (thought.trim()) {
+            content.push({
+              type: 'text',
+              text: thought
+            });
+          }
+        });
+        
+        // 添加工具调用内容块（作为标准的 tool_use 内容块）
+        parsed.toolCalls.forEach((toolCall, index) => {
+          try {
+            const toolUseContent: AnthropicToolUseContent = {
+              type: 'tool_use',
+              id: `tool_content_${this.generateRandomString(16)}_${index}`,
+              name: toolCall.name,
+              input: JSON.parse(toolCall.arguments)
+            };
+            content.push(toolUseContent);
+          } catch (error) {
+            logger.warn('Failed to parse tool call from content field, adding as text', {
+              requestId,
+              toolName: toolCall.name,
+              toolArguments: toolCall.arguments,
+              error: error instanceof Error ? error.message : String(error)
+            });
+            
+            // 如果解析失败，作为文本内容添加
+            content.push({
+              type: 'text',
+              text: `Tool call: ${toolCall.name}(${toolCall.arguments})`
+            });
+          }
+        });
+        
+        // 添加原始内容块
+        parsed.rawContent.forEach(raw => {
+          if (raw.trim()) {
+            content.push({
+              type: 'text',
+              text: raw
+            });
+          }
+        });
+      } else {
+        // 没有特殊标签，直接使用原始内容
+        const textContent: AnthropicTextContent = {
+          type: 'text',
+          text: message.content
+        };
+        content.push(textContent);
+      }
     }
 
     // 添加工具调用
@@ -219,12 +284,6 @@ export class OpenAIToAnthropicResponseConverter {
       return {};
     }
 
-    const parseContext = {
-      requestId,
-      toolCallId,
-      originalString: argumentsStr
-    };
-
     try {
       // 首先尝试标准JSON解析
       const result = JSON.parse(argumentsStr);
@@ -286,6 +345,10 @@ export class OpenAIToAnthropicResponseConverter {
     try {
       // 处理流式响应的第一个块
       if (isFirst) {
+        // 重置流状态
+        this.hasReasoningInStream = false;
+        this.hasContentInStream = false;
+        
         const messageStartEvent = {
           type: 'message_start',
           message: {
@@ -319,6 +382,8 @@ export class OpenAIToAnthropicResponseConverter {
       
       // 处理推理内容增量（DeepSeek 兼容性，包含特殊标签处理）
       if (choice?.delta?.reasoning_content) {
+        this.hasReasoningInStream = true; // 标记有推理内容
+        
         // 初始化流式标签解析器（如果需要）
         if (!this.streamingTagParser) {
           this.streamingTagParser = new StreamingTagParser();
@@ -352,18 +417,91 @@ export class OpenAIToAnthropicResponseConverter {
         }
       }
       
-      // 处理文本内容增量
+      // 处理文本内容增量（支持特殊标签解析）
       if (choice?.delta?.content) {
-        const deltaEvent = {
-          type: 'content_block_delta',
-          index: 0,
-          delta: {
-            type: 'text_delta',
-            text: choice.delta.content
-          }
-        };
+        this.hasContentInStream = true; // 标记有常规内容
+        
+        // 初始化内容流式标签解析器（如果需要）
+        if (!this.contentStreamingTagParser) {
+          this.contentStreamingTagParser = new StreamingTagParser();
+        }
+        
+        // 使用标签解析器处理内容
+        const contentTagResult = this.contentStreamingTagParser.processChunk(choice.delta.content);
+        
+        // 使用清理后的内容或原始内容
+        const contentText = contentTagResult.cleanedContent || choice.delta.content;
+        
+        if (contentText.trim() || (!contentTagResult.hasPartialTag && !contentTagResult.isTagStart)) {
+          const deltaEvent = {
+            type: 'content_block_delta',
+            index: 0,
+            delta: {
+              type: 'text_delta',
+              text: contentText
+            }
+          };
 
-        chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(deltaEvent)}\\n\\n`);
+          chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(deltaEvent)}\\n\\n`);
+          
+          logger.debug('Added content delta with tag processing', {
+            requestId,
+            originalLength: choice.delta.content.length,
+            cleanedLength: contentText.length,
+            hasSpecialTags: contentTagResult.isTagStart || contentTagResult.isTagEnd,
+            hasPartialTag: contentTagResult.hasPartialTag,
+            tagType: contentTagResult.tagType
+          });
+        }
+        
+        // 如果标签结束，处理提取的内容
+        if (contentTagResult.isTagEnd && contentTagResult.extractedContent) {
+          const { thoughts, toolCalls, rawContent } = contentTagResult.extractedContent;
+          
+          // 添加思维过程内容
+          thoughts.forEach(thought => {
+            if (thought.trim()) {
+              const thoughtEvent = {
+                type: 'content_block_delta',
+                index: 0,
+                delta: {
+                  type: 'text_delta',
+                  text: `\n${thought}`
+                }
+              };
+              chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(thoughtEvent)}\\n\\n`);
+            }
+          });
+          
+          // 添加工具调用信息（作为文本描述）
+          toolCalls.forEach(toolCall => {
+            const toolInfo = `\nTool call: ${toolCall.name}(${toolCall.arguments})`;
+            const toolEvent = {
+              type: 'content_block_delta',
+              index: 0,
+              delta: {
+                type: 'text_delta',
+                text: toolInfo
+              }
+            };
+            chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(toolEvent)}\\n\\n`);
+          });
+          
+          // 添加原始内容
+          rawContent.forEach(raw => {
+            if (raw.trim()) {
+              const rawEvent = {
+                type: 'content_block_delta',
+                index: 0,
+                delta: {
+                  type: 'text_delta',
+                  text: `\n${raw}`
+                }
+              };
+              chunks.push(`event: content_block_delta\\ndata: ${JSON.stringify(rawEvent)}\\n\\n`);
+            }
+          });
+        }
       }
       
       // 处理工具调用增量
@@ -415,16 +553,31 @@ export class OpenAIToAnthropicResponseConverter {
       // 处理结束信号
       if (choice?.finish_reason) {
         // 应用特殊处理规则：当 finishReason 为 "stop" 但 content 为空且 reasoning_content 不为空时
+        // 同时考虑 content 字段的特殊标签处理
         const hasReasoningContent = choice.delta?.reasoning_content && choice.delta.reasoning_content.trim();
         const hasRegularContent = choice.delta?.content && choice.delta.content.trim();
         
-        if (choice.finish_reason === 'stop' && !hasRegularContent && hasReasoningContent) {
+        // 检查 content 字段是否仅包含标签内容（没有实际输出文本）
+        let contentHasOnlyTags = false;
+        if (hasRegularContent && this.contentStreamingTagParser) {
+          const finalResult = this.contentStreamingTagParser.finalize();
+          contentHasOnlyTags = !finalResult.cleanedContent.trim() && 
+                              ((finalResult.extractedContent?.thoughts.length || 0) + 
+                               (finalResult.extractedContent?.toolCalls.length || 0) + 
+                               (finalResult.extractedContent?.rawContent.length || 0)) > 0;
+        }
+        
+        if (choice.finish_reason === 'stop' && 
+            ((!this.hasContentInStream && this.hasReasoningInStream) || contentHasOnlyTags)) {
           // 跳过结束处理逻辑，不发送 message_stop、content_block_stop、message_delta 事件
-          logger.debug('Skipping end processing for reasoning-only completion', {
+          logger.debug('Skipping end processing for reasoning-only or tag-only completion', {
             requestId,
             finishReason: choice.finish_reason,
             hasRegularContent: !!hasRegularContent,
-            hasReasoningContent: !!hasReasoningContent
+            hasReasoningContent: !!hasReasoningContent,
+            hasContentInStream: this.hasContentInStream,
+            hasReasoningInStream: this.hasReasoningInStream,
+            contentHasOnlyTags
           });
         } else {
           // 正常结束处理
