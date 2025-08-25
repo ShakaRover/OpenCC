@@ -90,13 +90,21 @@ export OPENAI_BASE_URL=https://api.your-provider.com
 npm start
 ```
 
+#### DeepSeek 支持说明
+- DeepSeek官网的直接支持工具调用，你用官网的API忽略这条
+- 只测试了 `DeepSeek V3.1`，起它版本未测试
+- DeepSeek 需要在CC中添加 [deepseek-v3.1-code-agent](docs/deepseek-v3.1-code-agent.md) 提示词。
+  复制这个文件到 `.claude` 目录下，在`CLAUDE.md` 中添加 `@deepseek-v3.1-code-agent.md`
+- 所以不建议DeepSeek和其他模型混用，混用切换的时候记得去掉 `CLAUDE.md` 中 `@deepseek-v3.1-code-agent.md`，然和 `/clear` 以便恢复效果。
+- 其实可以把这个提示词放到选项菜单中，但是我懒了，就到这结束吧，等我自己用的时候再来改。 
+
 #### 支持的命令行参数
 
 - `--openai-api-key <key>`: OpenAI API 密钥
 - `--openai-base-url <url>`: OpenAI API 端点 URL
 - `--qwen-oauth-file <path>`: qwen OAuth 认证文件路径
 - `--model <model>`: 默认使用的模型
-- `--model-mapping <file|json>`: 模型映射文件或 JSON 数据
+- `--model-mapping <file|json>`: 模型映射文件或 JSON 数据，参考 [model-mapping.example.json](docs/model-mapping.example.json)
 
 ### 5. 验证服务
 
@@ -104,99 +112,7 @@ npm start
 curl http://localhost:3000/health
 ```
 
-## 📖 API 使用指南
 
-### 基础请求格式
-
-OpenCC 完全兼容 Anthropic Claude API 格式：
-
-```bash
-curl -X POST http://localhost:3000/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
-  -d '{
-    "model": "claude-3-opus-20240229",
-    "max_tokens": 100,
-    "messages": [
-      {
-        "role": "user",
-        "content": "Hello, how are you?"
-      }
-    ]
-  }'
-```
-
-### 支持的端点
-
-| 端点 | 方法 | 描述 | 认证 |
-|------|------|------|------|
-| `/` | GET | API 信息 | ❌ |
-| `/v1/messages` | POST | 消息对话 | ✅ |
-| `/v1/models` | GET | 模型列表 | ✅ |
-| `/v1/models/{id}` | GET | 模型详情 | ✅ |
-| `/health` | GET | 健康检查 | ❌ |
-| `/health/detailed` | GET | 详细健康信息 | ❌ |
-| `/health/metrics` | GET | 指标信息 | ❌ |
-
-### 模型映射
-
-| Anthropic 模型 | 映射的 OpenAI 模型 | 上下文长度 | 能力特点 |
-|----------------|-------------------|------------|----------|
-| `claude-3-opus-20240229` | `gpt-4-turbo-preview` | 128K | 最强推理能力 |
-| `claude-opus-4-20250514` | `gpt-4-turbo-preview` | 128K | 最新版本 |
-| `claude-3-sonnet-20240229` | `gpt-4` | 8K | 平衡性能 |
-| `claude-3-haiku-20240307` | `gpt-3.5-turbo` | 16K | 快速响应 |
-| `claude-instant-1.2` | `gpt-3.5-turbo` | 16K | 轻量级处理 |
-
-### 流式响应
-
-```bash
-curl -X POST http://localhost:3000/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: your-api-key" \
-  -d '{
-    "model": "claude-3-opus-20240229",
-    "max_tokens": 100,
-    "stream": true,
-    "messages": [
-      {
-        "role": "user",
-        "content": "Tell me a story"
-      }
-    ]
-  }'
-```
-
-### 工具使用
-
-```json
-{
-  "model": "claude-3-opus-20240229",
-  "max_tokens": 200,
-  "messages": [
-    {
-      "role": "user",
-      "content": "What's the weather like in San Francisco?"
-    }
-  ],
-  "tools": [
-    {
-      "name": "get_weather",
-      "description": "Get current weather for a location",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "location": {
-            "type": "string",
-            "description": "City name"
-          }
-        },
-        "required": ["location"]
-      }
-    }
-  ]
-}
-```
 
 ## ⚙️ 配置选项
 
@@ -364,13 +280,23 @@ DEBUG_MODE=true npm run dev
 - [OpenAI](https://openai.com/) - GPT API 兼容性
 - [Express.js](https://expressjs.com/) - Web 框架
 - [TypeScript](https://www.typescriptlang.org/) - 类型安全
+- [Qoder]
+- [QwenCode]
+- [魔塔]
+- [More] - 自己脑补
 
 ## 📞 支持
 
-- 📚 [文档](https://github.com/your-org/opencc/wiki)
-- 🐛 [问题追踪](https://github.com/your-org/opencc/issues)
-- 💬 [讨论区](https://github.com/your-org/opencc/discussions)
+- 📚 没有支持，自己看着办
 
 ---
 
 **⚠️ 免责声明**: 此项目仅用于技术研究和测试目的。在生产环境中使用前，请仔细评估其适用性和安全性。
+
+## DeepSeek 效果图
+
+![dp001](docs/img/dp001.png)
+![dp002](docs/img/dp002.png)
+![dp003](docs/img/dp003.png)
+![dp004](docs/img/dp004.png)
+![dp005](docs/img/dp005.png)
