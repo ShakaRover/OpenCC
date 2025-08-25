@@ -18,8 +18,8 @@ import type {
   RateLimitConfig,
   LoggingConfig,
   FeatureFlags
-} from '@/types/index.js';
-import { ConfigMode } from '@/types/index.js';
+} from '../types/index.js';
+import { ConfigMode } from '../types/index.js';
 
 // Load environment variables
 config();
