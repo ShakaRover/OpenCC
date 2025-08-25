@@ -257,7 +257,10 @@ export class DeepSeekTagParser {
   
   /**
    * 解析工具调用内容，提取工具名称和参数
-   * 支持 DeepSeek 工具调用格式：tool_name<｜tool▁sep｜>tool_arguments
+   * 支持多种 DeepSeek 工具调用格式：
+   * 1. tool_name<｜tool▁sep｜>tool_arguments
+   * 2. function<｜tool▁sep｜>ActualToolName\n```json\n"json_args"\n```
+   * 3. JSON 格式: {"name": "tool", "arguments": {...}}
    */
   private static parseToolCallContent(toolContent: string): { name: string; arguments: string } {
     // 尝试解析为 JSON 格式（标准格式）
@@ -279,12 +282,48 @@ export class DeepSeekTagParser {
     // 尝试解析 DeepSeek 工具调用格式：tool_name<｜tool▁sep｜>tool_arguments
     const sepIndex = toolContent.indexOf(DEEPSEEK_TAGS.TOOL_CALL_SEP);
     if (sepIndex !== -1) {
-      const name = toolContent.substring(0, sepIndex).trim();
-      const args = toolContent.substring(sepIndex + DEEPSEEK_TAGS.TOOL_CALL_SEP.length).trim();
-      return {
-        name: name || 'unknown_tool',
-        arguments: args || '{}'
-      };
+      const beforeSep = toolContent.substring(0, sepIndex).trim();
+      const afterSep = toolContent.substring(sepIndex + DEEPSEEK_TAGS.TOOL_CALL_SEP.length).trim();
+      
+      // 检查是否为 function<｜tool▁sep｜>ActualToolName 格式
+      if (beforeSep === 'function') {
+        // 解析复杂格式：function<｜tool▁sep｜>ActualToolName\n```json\n"json_args"\n```
+        const lines = afterSep.split('\n');
+        const actualToolName = lines[0]?.trim() || 'unknown_tool';
+        
+        // 查找JSON内容
+        const jsonMatch = afterSep.match(/```json\s*\n(.*?)\n```/s);
+        if (jsonMatch && jsonMatch[1]) {
+          let jsonStr = jsonMatch[1].trim();
+          
+          // 如果JSON字符串被额外的引号包围，移除它们
+          if (jsonStr.startsWith('"') && jsonStr.endsWith('"')) {
+            try {
+              // 尝试解析外层引号
+              jsonStr = JSON.parse(jsonStr);
+            } catch (e) {
+              // 如果解析失败，保持原样
+            }
+          }
+          
+          return {
+            name: actualToolName || 'unknown_tool',
+            arguments: jsonStr || '{}'
+          };
+        } else {
+          // 没有找到JSON格式，使用整个后续内容作为参数
+          return {
+            name: actualToolName || 'unknown_tool',
+            arguments: afterSep.substring(actualToolName.length).trim() || '{}'
+          };
+        }
+      } else {
+        // 标准格式：tool_name<｜tool▁sep｜>tool_arguments
+        return {
+          name: beforeSep || 'unknown_tool',
+          arguments: afterSep || '{}'
+        };
+      }
     }
     
     // 尝试解析为 "工具名: 参数" 格式

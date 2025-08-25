@@ -89,6 +89,41 @@ describe('DeepSeek Tool Call Format', () => {
       expect(result.name).toBe('ping');
       expect(result.arguments).toBe('{}');
     });
+
+    // 新增：测试复杂的 function<｜tool▁sep｜>ActualToolName 格式
+    test('should parse complex function format with JSON args', () => {
+      const toolContent = `function<｜tool▁sep｜>Bash
+\`\`\`json
+"{\\"command\\":\\"date +\\\\\\"%A\\\\\\"\\"}\"
+\`\`\``;
+      
+      const result = DeepSeekTagParser['parseToolCallContent'](toolContent);
+      
+      expect(result.name).toBe('Bash');
+      expect(result.arguments).toBe('{"command":"date +\\"%A\\""}');
+    });
+
+    test('should parse function format with simple JSON', () => {
+      const toolContent = `function<｜tool▁sep｜>Read
+\`\`\`json
+"{\\"file_path\\": \\"/path/to/file.txt\\"}"
+\`\`\``;
+      
+      const result = DeepSeekTagParser['parseToolCallContent'](toolContent);
+      
+      expect(result.name).toBe('Read');
+      expect(result.arguments).toBe('{"file_path": "/path/to/file.txt"}');
+    });
+
+    test('should handle function format without JSON block', () => {
+      const toolContent = `function<｜tool▁sep｜>SimpleCommand
+some arguments here`;
+      
+      const result = DeepSeekTagParser['parseToolCallContent'](toolContent);
+      
+      expect(result.name).toBe('SimpleCommand');
+      expect(result.arguments).toBe('some arguments here');
+    });
   });
 
   describe('cleanContent', () => {
